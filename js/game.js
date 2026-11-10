@@ -637,7 +637,7 @@
     }
     ctx.fillStyle = C.bg1; if (gone) ctx.fillRect(18 * TILE, floorY, 2 * TILE, TILE);
 
-    text('RAGE BAIT', VW / 2, 150, 92, C.player);
+    text('MASTER BAITER', VW / 2, 150, 80, C.player);
     text('a platformer that does not like you', VW / 2, 215, 18, C.text, 'center', 'normal');
     const blink = Math.sin(t * 4) > -0.3;
     if (blink) text('press SPACE / tap to play', VW / 2, VH * 0.74, 22, C.portal);
