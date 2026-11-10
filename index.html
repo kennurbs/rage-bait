@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Rage Bait</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" aria-label="Rage Bait game"></canvas>
+  </div>
+  <div id="touch" hidden>
+    <div class="pad-left">
+      <button data-key="left" aria-label="Move left">&#9664;</button>
+      <button data-key="right" aria-label="Move right">&#9654;</button>
+    </div>
+    <div class="pad-right">
+      <button data-key="restart" class="small" aria-label="Restart">R</button>
+      <button data-key="jump" aria-label="Jump">&#9650;</button>
+    </div>
+  </div>
+  <script src="js/levels.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
