@@ -20,9 +20,10 @@
   const LINK = { orange: '#ff9f43', green: '#5cff8f', purple: '#a77bff', red: '#ff3b5c', blue: '#4fb6ff' };
   const FONT = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
   const SKINS = [
-    { main: '#ff4f8b', dark: '#c2245c' },
-    { main: '#4fb6ff', dark: '#1f6fb5' },
+    { main: '#ff4f8b', dark: '#c2245c', name: 'PINK' },
+    { main: '#4fb6ff', dark: '#1f6fb5', name: 'BLUE' },
   ];
+  const STRIKES = 3; // deaths in one level (2-player modes) before you get sent back
   const ROPE = 4.2; // chain length in tiles (special mode)
   const MODES = [
     { id: 'single', name: 'SINGLE PLAYER', sub: 'just you vs. the level', players: 1,
@@ -48,6 +49,15 @@
     'blame your partner.', 'teamwork makes the dream... die.', 'friendship ended.',
     'who was that?', 'that was NOT a team effort.', 'you both lose. together.',
   ];
+  // {v} = victim, {o} = the other player
+  const BLAME_LINES = [
+    '{o}, this is on you.', '{v} is the weak link.', '{o} saw that coming.', '{v} trusted {o}. mistake.',
+    'carried by {o}? not today.', '{v} needs a new partner.', '{o} is typing an apology...',
+  ];
+  const MOCK_LINES = [
+    '{l} died {n} times. {w} did the work.', '{w} carried. {l} was luggage.', '{l}: {n} deaths. legendary.',
+    '{l} should hold the controller the right way up.', '{w} would like a refund on {l}.',
+  ];
   const CHAIN_LINES = ['you dragged them, didn\'t you', 'til death do you part. so, now.', 'dead weight.'];
 
   // ---------------------------------------------------------------- save data
@@ -58,6 +68,7 @@
     try { s = Object.assign(def, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); }
     catch (e) { s = def; }
     s.progress = Object.assign({ single: s.unlocked || 1, multi: 1, special: 1 }, s.progress || {});
+    s.shame = Object.assign({ multi: [0, 0], special: [0, 0] }, s.shame || {});
     return s;
   })();
   function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } }
@@ -193,7 +204,8 @@
       this.chained = !!this.mode.chained;
       this.blocks = []; this.spikes = []; this.saws = []; this.pads = []; this.flags = [];
       this.doors = []; this.texts = []; this.bubbles = [];
-      this.buttons = []; this.gates = [];
+      this.buttons = []; this.gates = []; this.jumpHooks = [];
+      this.rope = ROPE; this.snagT = 0; this.view = { mirror: false, flip: false };
       this.triggers = []; this.timers = [];
       this.g = 1; this.invert = false; this.swap = false; this.jumpDelay = 0; this.t = 0;
       this.banner = null; this.won = false; this.over = false; this.shakeT = 0; this.shakeMag = 0;
@@ -223,7 +235,20 @@
       b.link = o.color ? LINK[o.color] : null;
       this.gates.push(g); return g;
     }
-    crate(x, floorY, size = 1) { return this.block(x, floorY - size, size, size, { crate: true }); }
+    // o.mimic: looks like a crate; touch it and it grows spikes, then crumbles away
+    crate(x, floorY, size = 1, o = {}) { return this.block(x, floorY - size, size, size, { crate: true, mimic: !!o.mimic, armed: 0, spiky: false }); }
+    onJump(fn) { this.jumpHooks.push(fn); }
+    setRope(n) { if (this.rope !== n) { this.rope = n; if (this.chained) { this.say(n < ROPE ? 'chain shrank!' : 'chain stretched!'); sfx.flip(); } } }
+    yank(p, vx, vy) { p.vx = vx; p.vy = vy; p.grounded = false; p.ground = null; p.onP = null; }
+    swapPlaces() {
+      const [a, b] = this.players;
+      if (!a || !b || a.dead || b.dead || a.done || b.done) return;
+      for (const k of ['x', 'y', 'vx', 'vy']) { const t = a[k]; a[k] = b[k]; b[k] = t; }
+      for (const q of [a, b]) { q.grounded = false; q.ground = null; q.onP = null; burst(q.x + q.w / 2, q.y + q.h / 2, C.pad, 14, 6); }
+      this.cur = a; this.say('swap places!'); sfx.flip();
+    }
+    mirror(on = true) { this.view.mirror = on; if (on) this.say('mirror mode'); sfx.flip(); }
+    flipView(on = true) { this.view.flip = on; if (on) this.say('which way is up?'); sfx.flip(); }
     moveBlock(b, x, y, speed = 8) { b.goal = { x, y, speed }; }
     block(x, y, w, h, o = {}) {
       const b = { kind: 'block', x, y, w, h, vy: 0, dx: 0, dy: 0, solid: true, hidden: false, crumble: 0,
@@ -233,7 +258,8 @@
     spike(x, y, w, dir = 'up', o = {}) {
       const L = this;
       const s = { kind: 'spike', x, y, w, dir, out: o.hidden ? 0 : 1, target: o.hidden ? 0 : 1,
-        pop() { if (s.target !== 1) { s.target = 1; sfx.pop(); L.shake(0.08, 0.08); } } };
+        pop() { if (s.target !== 1) { s.target = 1; sfx.pop(); L.shake(0.08, 0.08); } },
+        hide() { s.target = 0; } };
       this.spikes.push(s); return s;
     }
     door(x, floorY, o = {}) {
@@ -340,6 +366,14 @@
           }
           if (b.y > ROWS + 4) b.gone = true;
         }
+        if (b.mimic && !b.gone) {
+          const zone = { x: b.x - 0.06, y: b.y - 0.06, w: b.w + 0.12, h: b.h + 0.12 };
+          const toucher = ps.find((p) => overlap(p, zone));
+          if (!b.armed && toucher) { b.armed = this.t; sfx.trap(); this.cur = toucher; this.say('that is not a crate'); }
+          if (b.armed && !b.spiky && this.t - b.armed > 0.25) { b.spiky = true; sfx.pop(); }
+          if (b.spiky && toucher) this.kill(toucher, 'mimic');
+          if (b.armed && this.t - b.armed > 1.75) { b.gone = true; burst(b.x + b.w / 2, b.y + b.h / 2, C.crate, 20, 6); }
+        }
         if (b.flash > 0) b.flash -= dt;
         if (b.crumble && !b.pending && !b.falling && ps.some((p) => p.ground === b)) this.drop(b, b.crumble);
         if (b.pending) {
@@ -415,6 +449,9 @@
       if (p.buf > 0 && (p.coy > 0 || p.hang > 0)) {
         p.vy = -P.jump * g; p.buf = 0; p.coy = 0; p.hang = 0; p.grounded = false; p.ground = null;
         p.jumping = !p.lagged; p.cut = false; p.sx = 0.7; p.sy = 1.3; sfx.jump();
+        const was = this.cur; this.cur = p;
+        for (const fn of this.jumpHooks) fn(p);
+        this.cur = was;
       }
       if (p.jumping && !p.cut && !c.jump && p.vy * g < 0) { p.vy *= 0.5; p.cut = true; }
 
@@ -479,8 +516,9 @@
       if (a.dead || b.dead) return;
       const ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2;
       const dx = bx - ax, dy = by - ay, d = Math.hypot(dx, dy);
-      if (d <= ROPE || d === 0) return;
-      const nx = dx / d, ny = dy / d, ex = d - ROPE;
+      this.snagCheck(ax, ay, bx, by);
+      if (d <= this.rope || d === 0) return;
+      const nx = dx / d, ny = dy / d, ex = d - this.rope;
       let wa = a.grounded ? 0.2 : 1, wb = b.grounded ? 0.2 : 1;
       const sum = wa + wb; wa /= sum; wb /= sum;
       a.x += nx * ex * wa; a.y += ny * ex * wa;
@@ -491,6 +529,22 @@
       this.unstick(a); this.unstick(b);
       if (!a.grounded && b.grounded) a.hang = P.coyote;
       if (!b.grounded && a.grounded) b.hang = P.coyote;
+    }
+
+    // the chain catches on popped spikes and saws: both players get yanked toward each other
+    snagCheck(ax, ay, bx, by) {
+      if (this.t < this.snagT) return;
+      for (let i = 1; i < 10; i++) {
+        const x = ax + ((bx - ax) * i) / 10, y = ay + ((by - ay) * i) / 10;
+        const pt = { x: x - 0.05, y: y - 0.05, w: 0.1, h: 0.1 };
+        const hit = this.spikes.some((s) => s.out > 0.6 && overlap(pt, spikeBox(s))) || this.saws.some((s) => Math.hypot(s.x - x, s.y - y) < s.r);
+        if (!hit) continue;
+        const [a, b] = this.players, dir = Math.sign(bx - ax) || 1;
+        this.yank(a, dir * 7, -9 * this.g); this.yank(b, -dir * 7, -9 * this.g);
+        this.snagT = this.t + 1; this.cur = a; this.say('chain snagged!'); sfx.thud(); this.shake(0.15, 0.2);
+        burst(x, y, C.saw, 10, 5);
+        return;
+      }
     }
 
     unstick(p) {
@@ -555,23 +609,41 @@
       }
       this.shake(0.3, 0.4);
       sfx.die();
-      const pool = this.chained && Math.random() < 0.5 ? CHAIN_LINES
-        : this.mode.players > 1 && Math.random() < 0.5 ? TEAM_LINES : DEATH_LINES;
-      let line = pick(pool);
-      if (this.mode.players > 1) line = `P${p.idx + 1}: ${line}`;
+      if (this.mode.players === 1) {
+        game.message = { text: pick(DEATH_LINES), t: 0 };
+        this.wait(0.75, () => game.restart());
+        return;
+      }
+      // 2-player modes: blame, shame stats, strikes
+      const v = SKINS[p.idx].name, o = SKINS[1 - p.idx].name;
+      save.shame[this.mode.id][p.idx]++; persist();
+      game.runDeaths[p.idx]++;
+      game.strikes++;
+      const r = Math.random();
+      const line = r < 0.4 ? pick(BLAME_LINES).replace(/\{v\}/g, v).replace(/\{o\}/g, o)
+        : `${v}: ${pick(this.chained && r < 0.7 ? CHAIN_LINES : r < 0.85 ? TEAM_LINES : DEATH_LINES)}`;
       game.message = { text: line, t: 0 };
-      this.wait(0.75, () => game.restart());
+      if (game.strikes >= STRIKES) this.wait(0.9, () => game.strikeOut());
+      else this.wait(0.75, () => game.restart());
     }
 
     win() {
       this.won = true;
       this.banner = { text: pick(['NICE', 'OKAY FINE', 'LUCKY', 'HMPH']), sub: '', t: 0 };
+      if (this.mode.players > 1) {
+        const [d0, d1] = game.runDeaths;
+        if (d0 !== d1) {
+          const li = d0 > d1 ? 0 : 1;
+          this.banner.sub = pick(MOCK_LINES).replace(/\{l\}/g, SKINS[li].name).replace(/\{w\}/g, SKINS[1 - li].name).replace(/\{n\}/g, Math.max(d0, d1));
+        } else if (d0 > 0) this.banner.sub = `${d0} deaths each. equally bad.`;
+        else this.banner.sub = 'first try?? suspicious.';
+      }
       sfx.win();
       const p = this.cur;
       burst(p.x + p.w / 2, p.y + p.h / 2, C.portal, 40, 10);
       const prog = save.progress;
       if (this.idx + 2 > prog[this.mode.id]) { prog[this.mode.id] = Math.min(course(this.mode.id).length, this.idx + 2); persist(); }
-      this.wait(1.0, () => game.next());
+      this.wait(this.mode.players > 1 ? 1.8 : 1.0, () => game.next());
     }
   }
 
@@ -579,16 +651,27 @@
   const game = {
     state: 'title', // title | mode | select | play | end
     mode: 'single', modeSel: 0,
-    level: null, idx: 0, sel: 0, message: null, time: 0,
+    level: null, idx: 0, sel: 0, message: null, time: 0, strikes: 0, runDeaths: [0, 0],
     unlocked() { return Math.min(save.progress[this.mode] || 1, course(this.mode).length); },
     clearInput() { pressed[0].clear(); pressed[1].clear(); },
     setMode(id) { this.mode = id; syncCtl(); },
-    start(idx) {
+    start(idx, keepMessage = false) {
       this.idx = idx; this.level = new Level(idx, this.mode); this.state = 'play';
-      particles = []; this.clearInput(); this.message = null;
+      particles = []; this.clearInput(); if (!keepMessage) this.message = null;
+      this.strikes = 0; this.runDeaths = [0, 0];
       if (MODE[this.mode].chained) this.level.banner = { text: 'SURPRISE!', sub: "you're chained together. good luck.", t: 0, life: 2.4 };
     },
     restart() { this.level = new Level(this.idx, this.mode); this.clearInput(); },
+    // too many deaths in one level: back one level, and that level's unlock is gone
+    strikeOut() {
+      const back = Math.max(0, this.idx - 1);
+      save.progress[this.mode] = back + 1; persist();
+      this.start(back, true);
+      this.level.banner = {
+        text: `${STRIKES} STRIKES`, t: 0, life: 2.6,
+        sub: this.idx === 0 && back === 0 ? 'back to level 1. again.' : `back to level ${back + 1}. progress deleted.`,
+      };
+    },
     next() { if (this.idx + 1 < course(this.mode).length) this.start(this.idx + 1); else { this.state = 'end'; sfx.win(); } },
   };
 
@@ -687,7 +770,20 @@
   }
 
   function drawCrate(b) {
-    const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
+    const j = b.armed && !b.spiky ? (Math.random() - 0.5) * 4 : 0;
+    const x = b.x * TILE + j, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
+    if (b.spiky) {
+      ctx.fillStyle = C.spike;
+      ctx.beginPath();
+      const cx = x + w / 2, cy = y + h / 2;
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2, r = i % 2 ? w * 0.5 : w * 0.85;
+        ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = C.danger; ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+      return;
+    }
     ctx.fillStyle = C.crateDark; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = C.crate; ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
     ctx.strokeStyle = C.crateDark; ctx.lineWidth = 3;
@@ -809,7 +905,7 @@
     const [a, b] = L.players;
     if (a.dead || b.dead) return;
     const ax = (a.x + a.w / 2) * TILE, ay = (a.y + a.h / 2) * TILE, bx = (b.x + b.w / 2) * TILE, by = (b.y + b.h / 2) * TILE;
-    const d = Math.hypot(bx - ax, by - ay) / TILE, sag = Math.max(0, ROPE - d) * 0.55 * TILE * L.g;
+    const d = Math.hypot(bx - ax, by - ay) / TILE, sag = Math.max(0, L.rope - d) * 0.55 * TILE * L.g;
     const mx = (ax + bx) / 2, my = (ay + by) / 2 + sag;
     const n = 16;
     for (let i = 0; i <= n; i++) {
@@ -836,6 +932,8 @@
     const t = L.t;
     ctx.save();
     if (L.shakeT > 0) ctx.translate((Math.random() - 0.5) * L.shakeMag * TILE, (Math.random() - 0.5) * L.shakeMag * TILE);
+    if (L.view.mirror) { ctx.translate(VW, 0); ctx.scale(-1, 1); }
+    if (L.view.flip) { ctx.translate(0, VH); ctx.scale(1, -1); }
     drawBg();
     for (const tx of L.texts) text(tx.str, tx.x * TILE, tx.y * TILE, 18, C.dim, 'left', 'normal');
     for (const f of L.flags) drawFlag(f, t);
@@ -860,7 +958,11 @@
     text(`${String(L.idx + 1).padStart(2, '0')} / ${course(L.mode.id).length}  ${L.def.name.toUpperCase()}`, 14, 18, 15, C.text, 'left');
     const ld = save.levelDeaths[dkey(L.mode.id, L.idx)] || 0;
     text(`deaths here ${ld}   total ${save.deaths}`, VW - 14, 18, 15, C.danger, 'right');
-    if (L.mode.players > 1) text(L.mode.label || L.mode.name, VW / 2, 18, 13, C.portal);
+    if (L.mode.players > 1) {
+      const sh = save.shame[L.mode.id];
+      text(`${L.mode.label || L.mode.name}   strikes ${'✕'.repeat(game.strikes)}${'·'.repeat(Math.max(0, STRIKES - game.strikes))}`, VW / 2, 14, 12, C.portal);
+      text(`shame: PINK ${sh[0]} · BLUE ${sh[1]}`, VW / 2, 28, 11, C.text, 'center', 'normal');
+    }
 
     if (L.banner) {
       let k = Math.min(1, L.banner.t * 6);
