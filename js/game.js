@@ -17,6 +17,20 @@
     pad: '#a77bff', flag: '#5cff8f', saw: '#c9c9d6',
   };
   const FONT = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
+  const SKINS = [
+    { main: '#ff4f8b', dark: '#c2245c' },
+    { main: '#4fb6ff', dark: '#1f6fb5' },
+  ];
+  const ROPE = 4.2; // chain length in tiles (special mode)
+  const MODES = [
+    { id: 'single', name: 'SINGLE PLAYER', sub: 'just you vs. the level', players: 1,
+      hint: '←/→ or A/D move · SPACE / ↑ / W jump' },
+    { id: 'multi', name: 'MULTIPLAYER', sub: '2 players · one keyboard', players: 2,
+      hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump' },
+    { id: 'special', name: 'SPECIAL', sub: '2 players · trust us', players: 2, chained: true,
+      label: 'SPECIAL (CHAINED)', hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump' },
+  ];
+  const MODE = Object.fromEntries(MODES.map((m) => [m.id, m]));
 
   const DEATH_LINES = [
     'skill issue', 'did you even look?', 'the floor was lava. sort of.', 'classic.',
@@ -25,13 +39,21 @@
     'ouch.', 'the level says hi.', 'bold strategy.', 'noted for the highlight reel.',
     'that one was mean, sorry. (not sorry)', 'gravity: 1, you: 0', 'certified rage moment',
   ];
+  const TEAM_LINES = [
+    'blame your partner.', 'teamwork makes the dream... die.', 'friendship ended.',
+    'who was that?', 'that was NOT a team effort.', 'you both lose. together.',
+  ];
+  const CHAIN_LINES = ['you dragged them, didn\'t you', 'til death do you part. so, now.', 'dead weight.'];
 
   // ---------------------------------------------------------------- save data
   const SAVE_KEY = 'ragebait.save.v1';
   const save = (() => {
     const def = { unlocked: 1, deaths: 0, levelDeaths: {}, muted: false };
-    try { return Object.assign(def, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); }
-    catch (e) { return def; }
+    let s;
+    try { s = Object.assign(def, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); }
+    catch (e) { s = def; }
+    s.progress = Object.assign({ single: s.unlocked || 1, multi: 1, special: 1 }, s.progress || {});
+    return s;
   })();
   function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } }
 
@@ -88,38 +110,52 @@
   function doorBox(d) { return { x: d.x + 0.2, y: d.y + 0.2, w: d.w - 0.4, h: d.h - 0.3 }; }
 
   // ---------------------------------------------------------------- input
-  const keys = { left: false, right: false, jump: false };
-  const pressed = new Set();
+  // ctl[i] is what player i is holding; pressed[i] holds fresh jump presses.
+  const ctl = [{ left: false, right: false, jump: false }, { left: false, right: false, jump: false }];
+  const pressed = [new Set(), new Set()];
+  const down = new Set();
+  const touch = { left: false, right: false, jump: false };
   const KEYMAP = {
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
     ArrowUp: 'jump', KeyW: 'jump', Space: 'jump', KeyZ: 'jump', KeyK: 'jump',
   };
-  function press(k) { if (!keys[k]) pressed.add(k); keys[k] = true; }
-  function release(k) { keys[k] = false; }
+  const P2_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp']);
+  // in 2-player modes the arrow keys belong to player 2; everything else is player 1
+  function owner(code) { return MODE[game.mode].players > 1 && P2_KEYS.has(code) ? 1 : 0; }
+  function syncCtl() {
+    for (const c of ctl) c.left = c.right = c.jump = false;
+    for (const code of down) { const k = KEYMAP[code]; if (k) ctl[owner(code)][k] = true; }
+    for (const k in touch) if (touch[k]) ctl[0][k] = true;
+  }
   addEventListener('keydown', (e) => {
     audioOn();
     const k = KEYMAP[e.code];
-    if (k) { press(k); e.preventDefault(); }
+    if (k) {
+      if (!down.has(e.code)) { down.add(e.code); if (k === 'jump') pressed[owner(e.code)].add('jump'); }
+      syncCtl(); e.preventDefault();
+    }
     if (!e.repeat) onKey(e.code);
   });
-  addEventListener('keyup', (e) => { const k = KEYMAP[e.code]; if (k) release(k); });
-  addEventListener('blur', () => { keys.left = keys.right = keys.jump = false; });
+  addEventListener('keyup', (e) => { down.delete(e.code); syncCtl(); });
+  addEventListener('blur', () => { down.clear(); touch.left = touch.right = touch.jump = false; syncCtl(); });
 
-  // touch buttons
+  // touch buttons (always player 1)
   const touchEl = document.getElementById('touch');
   if (matchMedia('(pointer: coarse)').matches) touchEl.hidden = false;
   touchEl.querySelectorAll('button').forEach((btn) => {
     const k = btn.dataset.key;
-    const down = (e) => {
+    const on = (e) => {
       e.preventDefault(); audioOn(); btn.classList.add('on');
-      if (k === 'restart') onKey('KeyR');
-      else { press(k); if (k === 'jump' && game.state !== 'play') onKey('Enter'); }
+      if (k === 'restart') { onKey('KeyR'); return; }
+      if (!touch[k] && k === 'jump') pressed[0].add('jump');
+      touch[k] = true; syncCtl();
+      if (k === 'jump' && game.state !== 'play') onKey('Enter');
     };
-    const up = (e) => { e.preventDefault(); btn.classList.remove('on'); if (k !== 'restart') release(k); };
-    btn.addEventListener('pointerdown', down);
-    btn.addEventListener('pointerup', up);
-    btn.addEventListener('pointercancel', up);
-    btn.addEventListener('pointerleave', up);
+    const off = (e) => { e.preventDefault(); btn.classList.remove('on'); if (k !== 'restart') { touch[k] = false; syncCtl(); } };
+    btn.addEventListener('pointerdown', on);
+    btn.addEventListener('pointerup', off);
+    btn.addEventListener('pointercancel', off);
+    btn.addEventListener('pointerleave', off);
   });
 
   // ---------------------------------------------------------------- particles & fx
@@ -136,24 +172,32 @@
   }
 
   // ---------------------------------------------------------------- level runtime
+  function makePlayer(x, floorY, idx) {
+    return {
+      idx, x, y: floorY - P.h, w: P.w, h: P.h, vx: 0, vy: 0, face: 1,
+      grounded: false, ground: null, coy: 0, buf: 0, hang: 0, jumping: false, cut: false, lagged: false,
+      jq: [], dead: false, done: false, taut: false, sx: 1, sy: 1,
+    };
+  }
+
   class Level {
-    constructor(idx) {
+    constructor(idx, modeId = 'single') {
       this.idx = idx;
       this.def = LEVELS[idx];
+      this.mode = MODE[modeId];
+      this.chained = !!this.mode.chained;
       this.blocks = []; this.spikes = []; this.saws = []; this.pads = []; this.flags = [];
       this.doors = []; this.texts = []; this.bubbles = [];
-      this.triggers = []; this.timers = []; this.jumpQueue = [];
+      this.triggers = []; this.timers = [];
       this.g = 1; this.invert = false; this.jumpDelay = 0; this.t = 0;
-      this.banner = null; this.won = false; this.shakeT = 0; this.shakeMag = 0;
+      this.banner = null; this.won = false; this.over = false; this.shakeT = 0; this.shakeMag = 0;
       this.spawnPt = { x: 2, y: 15 };
-      this.player = null;
+      this.players = [];
+      this.cur = null;
       this.def.build(this);
       const s = this.spawnPt;
-      this.player = {
-        x: s.x, y: s.y - P.h, w: P.w, h: P.h, vx: 0, vy: 0, face: 1,
-        grounded: false, ground: null, coy: 0, buf: 0, jumping: false, cut: false,
-        dead: false, sx: 1, sy: 1,
-      };
+      for (let i = 0; i < this.mode.players; i++) this.players.push(makePlayer(s.x + i * 1.3, s.y, i));
+      this.cur = this.players[0];
     }
 
     // ---- build API
@@ -179,6 +223,8 @@
     text(x, y, str) { this.texts.push({ x, y, str }); }
 
     // ---- scripting API
+    // Trigger conditions are checked once per active player; L.player / L.px / L.near / L.touch
+    // refer to whichever player is being checked, so level scripts work in every mode.
     on(cond, fn, o = {}) { this.triggers.push({ cond, fn, repeat: !!o.repeat, done: false }); }
     wait(sec, fn) { this.timers.push({ at: this.t + sec, fn }); }
     drop(b, delay = 0, o = {}) {
@@ -186,20 +232,24 @@
       b.pending = true; b.shakeT = delay; b.land = !!o.land;
     }
     moveDoor(d, x, floorY, speed = 30) { d.tween = { x, y: floorY - d.h, speed }; sfx.move(); }
-    say(str) { this.bubbles.push({ str, t: 0 }); }
+    say(str) { this.bubbles.push({ str, t: 0, p: this.cur }); }
     shake(t = 0.2, mag = 0.25) { this.shakeT = Math.max(this.shakeT, t); this.shakeMag = Math.max(this.shakeMag, mag); }
     fakeWin() { this.banner = { text: 'LEVEL COMPLETE', sub: 'well done!', t: 0 }; sfx.win(); }
-    get px() { return this.player.x + this.player.w / 2; }
-    get py() { return this.player.y + this.player.h / 2; }
+    get player() { return this.cur; }
+    get px() { return this.cur.x + this.cur.w / 2; }
+    get py() { return this.cur.y + this.cur.h / 2; }
     near(o, d) { return Math.hypot(o.x + o.w / 2 - this.px, o.y + o.h / 2 - this.py) < d; }
-    touch(o) { return overlap(this.player, o.kind === 'door' ? doorBox(o) : o); }
+    touch(o) { return overlap(this.cur, o.kind === 'door' ? doorBox(o) : o); }
+    active() { return this.players.filter((p) => !p.dead && !p.done); }
 
     // ---- simulation
     step(dt) {
-      const p = this.player;
       this.t += dt;
       if (this.shakeT > 0) { this.shakeT -= dt; if (this.shakeT <= 0) this.shakeMag = 0; }
-      if (this.banner) this.banner.t += dt;
+      if (this.banner) {
+        this.banner.t += dt;
+        if (this.banner.life && this.banner.t > this.banner.life) this.banner = null;
+      }
       for (const b of this.bubbles) b.t += dt;
       this.bubbles = this.bubbles.filter((b) => b.t < 1.4);
 
@@ -207,26 +257,32 @@
         const tm = this.timers[i];
         if (this.t >= tm.at) { this.timers.splice(i, 1); tm.fn(); }
       }
-      if (!p.dead && !this.won) {
+      const live = () => !this.over && !this.won;
+      if (live()) {
         for (let i = 0; i < this.triggers.length; i++) {
           const tr = this.triggers[i];
           if (tr.done) continue;
-          if (tr.cond()) { tr.fn(); if (!tr.repeat) tr.done = true; }
+          for (const p of this.active()) {
+            this.cur = p;
+            if (tr.cond()) { tr.fn(); if (!tr.repeat) tr.done = true; break; }
+          }
         }
       }
+      this.cur = this.active()[0] || this.players[0];
 
       this.stepWorld(dt);
-      if (!p.dead && !this.won) this.stepPlayer(dt);
-      if (!p.dead && !this.won) this.checkContacts();
+      if (live()) for (const p of this.active()) this.stepPlayer(p, dt);
+      if (live() && this.chained) this.chain();
+      if (live()) for (const p of this.active()) { this.checkContacts(p); if (!live()) break; }
     }
 
     stepWorld(dt) {
-      const p = this.player;
+      const ps = this.active();
       for (const b of this.blocks) {
         if (b.gone) continue;
         const ox = b.x, oy = b.y;
         if (b.flash > 0) b.flash -= dt;
-        if (b.crumble && !b.pending && !b.falling && p.ground === b && !p.dead) this.drop(b, b.crumble);
+        if (b.crumble && !b.pending && !b.falling && ps.some((p) => p.ground === b)) this.drop(b, b.crumble);
         if (b.pending) {
           b.shakeT -= dt;
           if (b.shakeT <= 0) { b.pending = false; b.falling = true; sfx.trap(); }
@@ -248,19 +304,19 @@
         b.dx = b.x - ox; b.dy = b.y - oy;
       }
 
-      // carry the player horizontally with whatever they stand on
-      if (!p.dead && p.ground && p.ground.dx) p.x += p.ground.dx;
-
-      // moving solids push (and crush) the player
-      if (!p.dead) {
+      for (const p of ps) {
+        if (this.over) break;
+        // carry the player horizontally with whatever they stand on
+        if (p.ground && p.ground.dx) p.x += p.ground.dx;
+        // moving solids push (and crush) the player
         for (const b of this.blocks) {
           if (!solid(b) || (!b.dx && !b.dy) || !overlap(p, b)) continue;
           if (Math.abs(b.dy) >= Math.abs(b.dx)) { p.y = b.dy > 0 ? b.y + b.h : b.y - p.h; p.vy = b.vy || 0; }
           else p.x = b.dx > 0 ? b.x + b.w : b.x - p.w;
           for (const o of this.blocks) {
-            if (o !== b && solid(o) && overlap(p, o)) { this.kill('crushed'); break; }
+            if (o !== b && solid(o) && overlap(p, o)) { this.kill(p); break; }
           }
-          if (p.dead) break;
+          if (this.over) break;
         }
       }
 
@@ -276,9 +332,9 @@
       }
     }
 
-    stepPlayer(dt) {
-      const p = this.player, g = this.g;
-      let dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    stepPlayer(p, dt) {
+      const g = this.g, c = ctl[p.idx], pr = pressed[p.idx];
+      let dir = (c.right ? 1 : 0) - (c.left ? 1 : 0);
       if (this.invert) dir = -dir;
       let acc = p.grounded ? P.accG : P.accA;
       if (!dir && p.grounded) acc = P.fric;
@@ -286,19 +342,20 @@
       if (dir) p.face = dir;
 
       // jump input (optionally lagged)
-      if (pressed.has('jump')) {
-        pressed.delete('jump');
-        if (this.jumpDelay > 0) this.jumpQueue.push(this.t + this.jumpDelay);
+      if (pr.has('jump')) {
+        pr.delete('jump');
+        if (this.jumpDelay > 0) p.jq.push(this.t + this.jumpDelay);
         else { p.buf = P.buffer; p.lagged = false; }
       }
-      while (this.jumpQueue.length && this.jumpQueue[0] <= this.t) { this.jumpQueue.shift(); p.buf = 0.04; p.lagged = true; }
+      while (p.jq.length && p.jq[0] <= this.t) { p.jq.shift(); p.buf = 0.04; p.lagged = true; }
       p.buf -= dt;
       p.coy = p.grounded ? P.coyote : p.coy - dt;
-      if (p.buf > 0 && p.coy > 0) {
-        p.vy = -P.jump * g; p.buf = 0; p.coy = 0; p.grounded = false; p.ground = null;
+      p.hang -= dt;
+      if (p.buf > 0 && (p.coy > 0 || p.hang > 0)) {
+        p.vy = -P.jump * g; p.buf = 0; p.coy = 0; p.hang = 0; p.grounded = false; p.ground = null;
         p.jumping = !p.lagged; p.cut = false; p.sx = 0.7; p.sy = 1.3; sfx.jump();
       }
-      if (p.jumping && !p.cut && !keys.jump && p.vy * g < 0) { p.vy *= 0.5; p.cut = true; }
+      if (p.jumping && !p.cut && !c.jump && p.vy * g < 0) { p.vy *= 0.5; p.cut = true; }
 
       p.vy = clamp(p.vy + P.grav * g * dt, -P.maxFall, P.maxFall);
 
@@ -328,42 +385,94 @@
       p.sx = approach(p.sx, 1, dt * 4); p.sy = approach(p.sy, 1, dt * 4);
     }
 
+    // Special mode: keep the two players within ROPE of each other. Whoever stands on solid
+    // ground is the heavier anchor, and a player dangling from an anchored partner may jump.
+    chain() {
+      const [a, b] = this.players;
+      a.taut = b.taut = false;
+      if (a.dead || b.dead) return;
+      const ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2;
+      const dx = bx - ax, dy = by - ay, d = Math.hypot(dx, dy);
+      if (d <= ROPE || d === 0) return;
+      const nx = dx / d, ny = dy / d, ex = d - ROPE;
+      let wa = a.grounded ? 0.2 : 1, wb = b.grounded ? 0.2 : 1;
+      const sum = wa + wb; wa /= sum; wb /= sum;
+      a.x += nx * ex * wa; a.y += ny * ex * wa;
+      b.x -= nx * ex * wb; b.y -= ny * ex * wb;
+      const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+      if (rel > 0) { a.vx += nx * rel * wa; a.vy += ny * rel * wa; b.vx -= nx * rel * wb; b.vy -= ny * rel * wb; }
+      a.taut = b.taut = true;
+      this.unstick(a); this.unstick(b);
+      if (!a.grounded && b.grounded) a.hang = P.coyote;
+      if (!b.grounded && a.grounded) b.hang = P.coyote;
+    }
+
+    unstick(p) {
+      for (const b of this.blocks) {
+        if (!solid(b) || !overlap(p, b)) continue;
+        this.reveal(b);
+        const l = p.x + p.w - b.x, r = b.x + b.w - p.x, u = p.y + p.h - b.y, dn = b.y + b.h - p.y;
+        const m = Math.min(l, r, u, dn);
+        if (m === l) { p.x -= l; p.vx = Math.min(p.vx, 0); }
+        else if (m === r) { p.x += r; p.vx = Math.max(p.vx, 0); }
+        else if (m === u) { p.y -= u; if (p.vy > 0) p.vy = 0; if (this.g > 0) { p.grounded = true; p.ground = b; } }
+        else { p.y += dn; if (p.vy < 0) p.vy = 0; if (this.g < 0) { p.grounded = true; p.ground = b; } }
+      }
+      p.x = clamp(p.x, 0, COLS - p.w);
+    }
+
     reveal(b) {
       if (!b.hidden) return;
       b.hidden = false; b.flash = 0.4; sfx.reveal();
       burst(b.x + b.w / 2, b.y + b.h / 2, C.portal, 12, 5);
     }
 
-    checkContacts() {
-      const p = this.player;
-      for (const s of this.spikes) if (s.out > 0.6 && overlap(p, spikeBox(s))) return this.kill('spikes');
+    checkContacts(p) {
+      for (const s of this.spikes) if (s.out > 0.6 && overlap(p, spikeBox(s))) return this.kill(p);
       for (const s of this.saws) {
         const cx = clamp(s.x, p.x, p.x + p.w), cy = clamp(s.y, p.y, p.y + p.h);
-        if (Math.hypot(s.x - cx, s.y - cy) < s.r * 0.82) return this.kill('saw');
+        if (Math.hypot(s.x - cx, s.y - cy) < s.r * 0.82) return this.kill(p);
       }
-      if (p.y > ROWS + 1 || p.y < -3) return this.kill('fell');
+      if (p.y > ROWS + 1 || p.y < -3) return this.kill(p);
       for (const pd of this.pads) {
         if (this.g !== pd.g && overlap(p, padBox(pd))) {
-          this.g = pd.g; p.jumping = false; p.grounded = false; p.ground = null; sfx.flip();
+          this.g = pd.g; sfx.flip();
+          for (const q of this.players) { q.jumping = false; q.grounded = false; q.ground = null; }
           burst(p.x + p.w / 2, p.y + p.h / 2, C.pad, 14, 6);
         }
       }
       for (const d of this.doors) {
-        if (!d.fake && !d.tween && overlap(p, doorBox(d))) return this.win();
+        if (d.fake || d.tween || !overlap(p, doorBox(d))) continue;
+        // multiplayer: everyone has to make it in; single and chained: one touch is enough
+        if (this.mode.players > 1 && !this.chained) {
+          p.done = true; sfx.reveal();
+          burst(p.x + p.w / 2, p.y + p.h / 2, SKINS[p.idx].main, 20, 7);
+          this.cur = p; this.say('in!');
+          if (this.active().length === 0) this.win();
+        } else this.win();
+        return;
       }
     }
 
-    kill() {
-      const p = this.player;
-      if (p.dead) return;
-      p.dead = true;
+    kill(p = this.active()[0]) {
+      if (this.over || !p) return;
+      this.over = true;
       save.deaths++;
       save.levelDeaths[this.idx] = (save.levelDeaths[this.idx] || 0) + 1;
       persist();
-      burst(p.x + p.w / 2, p.y + p.h / 2, C.player, 34, 11);
+      // one dies, everyone restarts
+      for (const q of this.players) {
+        if (q.done) continue;
+        q.dead = true;
+        burst(q.x + q.w / 2, q.y + q.h / 2, SKINS[q.idx].main, q === p ? 34 : 18, q === p ? 11 : 7);
+      }
       this.shake(0.3, 0.4);
       sfx.die();
-      game.message = { text: pick(DEATH_LINES), t: 0 };
+      const pool = this.chained && Math.random() < 0.5 ? CHAIN_LINES
+        : this.mode.players > 1 && Math.random() < 0.5 ? TEAM_LINES : DEATH_LINES;
+      let line = pick(pool);
+      if (this.mode.players > 1) line = `P${p.idx + 1}: ${line}`;
+      game.message = { text: line, t: 0 };
       this.wait(0.75, () => game.restart());
     }
 
@@ -371,44 +480,55 @@
       this.won = true;
       this.banner = { text: pick(['NICE', 'OKAY FINE', 'LUCKY', 'HMPH']), sub: '', t: 0 };
       sfx.win();
-      burst(this.px, this.py, C.portal, 40, 10);
-      if (this.idx + 2 > save.unlocked) { save.unlocked = Math.min(LEVELS.length, this.idx + 2); persist(); }
+      const p = this.cur;
+      burst(p.x + p.w / 2, p.y + p.h / 2, C.portal, 40, 10);
+      const prog = save.progress;
+      if (this.idx + 2 > prog[this.mode.id]) { prog[this.mode.id] = Math.min(LEVELS.length, this.idx + 2); persist(); }
       this.wait(1.0, () => game.next());
     }
   }
 
   // ---------------------------------------------------------------- game state
   const game = {
-    state: 'title', // title | select | play | end
+    state: 'title', // title | mode | select | play | end
+    mode: 'single', modeSel: 0,
     level: null, idx: 0, sel: 0, message: null, time: 0,
+    unlocked() { return Math.min(save.progress[this.mode] || 1, LEVELS.length); },
+    clearInput() { pressed[0].clear(); pressed[1].clear(); },
+    setMode(id) { this.mode = id; syncCtl(); },
     start(idx) {
-      this.idx = idx; this.level = new Level(idx); this.state = 'play';
-      particles = []; pressed.clear(); this.message = null;
+      this.idx = idx; this.level = new Level(idx, this.mode); this.state = 'play';
+      particles = []; this.clearInput(); this.message = null;
+      if (MODE[this.mode].chained) this.level.banner = { text: 'SURPRISE!', sub: "you're chained together. good luck.", t: 0, life: 2.4 };
     },
-    restart() { this.level = new Level(this.idx); pressed.clear(); },
+    restart() { this.level = new Level(this.idx, this.mode); this.clearInput(); },
     next() { if (this.idx + 1 < LEVELS.length) this.start(this.idx + 1); else { this.state = 'end'; sfx.win(); } },
   };
 
   function onKey(code) {
+    const go = code === 'Enter' || code === 'Space' || code === 'KeyZ';
     if (code === 'KeyM') { save.muted = !save.muted; persist(); return; }
     if (game.state === 'title') {
-      if (code === 'KeyL') { game.state = 'select'; game.sel = Math.min(save.unlocked, LEVELS.length) - 1; sfx.click(); }
-      else if (code === 'Enter' || code === 'Space' || code === 'KeyZ') { sfx.click(); game.start(Math.min(save.unlocked, LEVELS.length) - 1); }
+      if (go) { sfx.click(); game.state = 'mode'; }
+    } else if (game.state === 'mode') {
+      if (code === 'ArrowRight' || code === 'KeyD' || code === 'ArrowDown' || code === 'KeyS') { game.modeSel = Math.min(MODES.length - 1, game.modeSel + 1); sfx.click(); }
+      if (code === 'ArrowLeft' || code === 'KeyA' || code === 'ArrowUp' || code === 'KeyW') { game.modeSel = Math.max(0, game.modeSel - 1); sfx.click(); }
+      if (go) { sfx.click(); game.setMode(MODES[game.modeSel].id); game.start(game.unlocked() - 1); }
+      if (code === 'KeyL') { sfx.click(); game.setMode(MODES[game.modeSel].id); game.state = 'select'; game.sel = game.unlocked() - 1; }
+      if (code === 'Escape') game.state = 'title';
     } else if (game.state === 'select') {
-      const n = Math.min(save.unlocked, LEVELS.length);
+      const n = game.unlocked();
       if (code === 'ArrowRight' || code === 'KeyD') game.sel = Math.min(n - 1, game.sel + 1);
       if (code === 'ArrowLeft' || code === 'KeyA') game.sel = Math.max(0, game.sel - 1);
       if (code === 'ArrowDown' || code === 'KeyS') game.sel = Math.min(n - 1, game.sel + 5);
       if (code === 'ArrowUp' || code === 'KeyW') game.sel = Math.max(0, game.sel - 5);
-      if (code === 'Enter' || code === 'Space' || code === 'KeyZ') { sfx.click(); game.start(game.sel); }
-      if (code === 'Escape') game.state = 'title';
+      if (go) { sfx.click(); game.start(game.sel); }
+      if (code === 'Escape') game.state = 'mode';
     } else if (game.state === 'play') {
-      if (code === 'KeyR' && !game.level.won) {
-        if (!game.level.player.dead) game.level.kill();
-      }
+      if (code === 'KeyR' && !game.level.won) game.level.kill();
       if (code === 'Escape') { game.state = 'select'; game.sel = game.idx; }
     } else if (game.state === 'end') {
-      if (code === 'Enter' || code === 'Space' || code === 'Escape') game.state = 'title';
+      if (go || code === 'Escape') game.state = 'mode';
     }
   }
 
@@ -419,10 +539,15 @@
       audioOn();
       const r = cv.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * VW, y = ((e.clientY - r.top) / r.height) * VH;
-      if (game.state === 'title') onKey(y > VH * 0.72 && x > VW * 0.55 ? 'KeyL' : 'Enter');
-      else if (game.state === 'select') {
+      if (game.state === 'title') onKey('Enter');
+      else if (game.state === 'mode') {
+        const i = modeHit(x, y);
+        if (i >= 0) { game.modeSel = i; onKey('Enter'); }
+        else if (y > VH - 70) onKey('KeyL');
+        else if (y < 90) onKey('Escape');
+      } else if (game.state === 'select') {
         const i = selectHit(x, y);
-        if (i >= 0 && i < save.unlocked) { game.sel = i; onKey('Enter'); }
+        if (i >= 0 && i < game.unlocked()) { game.sel = i; onKey('Enter'); }
         else if (y < 90) onKey('Escape');
       } else if (game.state === 'end') onKey('Enter');
     });
@@ -555,14 +680,15 @@
   }
 
   function drawPlayer(p, L) {
-    if (p.dead) return;
+    if (p.dead || p.done) return;
     const cx = (p.x + p.w / 2) * TILE, base = L.g > 0 ? (p.y + p.h) * TILE : p.y * TILE;
     const w = p.w * TILE * p.sx, h = p.h * TILE * p.sy;
     ctx.save();
     ctx.translate(cx, base);
     if (L.g < 0) ctx.scale(1, -1);
-    ctx.fillStyle = C.playerDark; roundRect(-w / 2, -h, w, h, 5); ctx.fill();
-    ctx.fillStyle = C.player; roundRect(-w / 2 + 1.5, -h + 1.5, w - 3, h - 5, 4); ctx.fill();
+    const skin = SKINS[p.idx || 0];
+    ctx.fillStyle = skin.dark; roundRect(-w / 2, -h, w, h, 5); ctx.fill();
+    ctx.fillStyle = skin.main; roundRect(-w / 2 + 1.5, -h + 1.5, w - 3, h - 5, 4); ctx.fill();
     // eyes
     const look = p.face * 2.5, ey = -h * 0.62;
     for (const ex of [-5, 5]) {
@@ -572,8 +698,25 @@
     ctx.restore();
   }
 
+  function drawChain(L) {
+    const [a, b] = L.players;
+    if (a.dead || b.dead) return;
+    const ax = (a.x + a.w / 2) * TILE, ay = (a.y + a.h / 2) * TILE, bx = (b.x + b.w / 2) * TILE, by = (b.y + b.h / 2) * TILE;
+    const d = Math.hypot(bx - ax, by - ay) / TILE, sag = Math.max(0, ROPE - d) * 0.55 * TILE * L.g;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2 + sag;
+    const n = 16;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      const x = u * u * ax + 2 * u * t * mx + t * t * bx, y = u * u * ay + 2 * u * t * my + t * t * by;
+      ctx.strokeStyle = a.taut ? C.danger : C.saw; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(x, y, 3.2, 2.2, Math.atan2(by - ay, bx - ax) + (i % 2 ? Math.PI / 2 : 0), 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
   function drawBubble(b, L) {
-    const p = L.player, x = (p.x + p.w / 2) * TILE, y = (L.g > 0 ? p.y - 0.9 : p.y + p.h + 0.9) * TILE - Math.min(b.t, 0.3) * 20 * L.g;
+    const p = b.p || L.players[0];
+    if (p.dead) return;
+    const x = (p.x + p.w / 2) * TILE, y = (L.g > 0 ? p.y - 0.9 : p.y + p.h + 0.9) * TILE - Math.min(b.t, 0.3) * 20 * L.g;
     ctx.globalAlpha = clamp((1.4 - b.t) / 0.3, 0, 1);
     ctx.font = `bold 14px ${FONT}`;
     const w = ctx.measureText(b.str).width + 14;
@@ -594,7 +737,8 @@
     for (const b of L.blocks) drawBlock(b, L);
     for (const pd of L.pads) drawPad(pd, t);
     for (const s of L.saws) drawSaw(s);
-    drawPlayer(L.player, L);
+    if (L.chained) drawChain(L);
+    for (const p of L.players) drawPlayer(p, L);
     for (const p of particles) {
       ctx.globalAlpha = clamp(1 - p.t / p.life, 0, 1); ctx.fillStyle = p.color;
       ctx.fillRect(p.x * TILE, p.y * TILE, p.size * TILE, p.size * TILE);
@@ -608,9 +752,11 @@
     text(`${String(L.idx + 1).padStart(2, '0')} / ${LEVELS.length}  ${L.def.name.toUpperCase()}`, 14, 18, 15, C.text, 'left');
     const ld = save.levelDeaths[L.idx] || 0;
     text(`deaths here ${ld}   total ${save.deaths}`, VW - 14, 18, 15, C.danger, 'right');
+    if (L.mode.players > 1) text(L.mode.label || L.mode.name, VW / 2, 18, 13, C.portal);
 
     if (L.banner) {
-      const k = Math.min(1, L.banner.t * 6);
+      let k = Math.min(1, L.banner.t * 6);
+      if (L.banner.life) k = Math.min(k, clamp((L.banner.life - L.banner.t) / 0.3, 0, 1));
       ctx.fillStyle = `rgba(13,12,29,${0.6 * k})`; ctx.fillRect(0, VH / 2 - 60, VW, 120);
       text(L.banner.text, VW / 2, VH / 2 - 10, 54 * (0.6 + 0.4 * k), C.portal);
       if (L.banner.sub) text(L.banner.sub, VW / 2, VH / 2 + 34, 16, C.text, 'center', 'normal');
@@ -619,7 +765,7 @@
       const m = game.message, a = clamp((1.6 - m.t) / 0.3, 0, 1);
       ctx.globalAlpha = a; text(m.text, VW / 2, 80, 26, C.danger); ctx.globalAlpha = 1;
     }
-    text('←/→ move · SPACE jump · R restart · ESC levels · M mute', VW / 2, VH - 12, 12, 'rgba(20,20,43,0.55)', 'center', 'normal');
+    text(`${L.mode.hint} · R restart · ESC levels · M mute`, VW / 2, VH - 12, 12, 'rgba(20,20,43,0.55)', 'center', 'normal');
   }
 
   function drawTitle(t) {
@@ -641,8 +787,7 @@
     text('a platformer that does not like you', VW / 2, 215, 18, C.text, 'center', 'normal');
     const blink = Math.sin(t * 4) > -0.3;
     if (blink) text('press SPACE / tap to play', VW / 2, VH * 0.74, 22, C.portal);
-    text('[L] level select', VW * 0.78, VH * 0.82, 16, C.text);
-    text(`deaths so far: ${save.deaths}`, VW * 0.22, VH * 0.82, 16, C.danger);
+    text(`deaths so far: ${save.deaths}`, VW / 2, VH * 0.82, 16, C.danger);
     text(save.muted ? 'sound off (M)' : 'sound on (M)', VW / 2, VH - 20, 12, C.dim, 'center', 'normal');
   }
 
@@ -658,9 +803,9 @@
   function drawSelect(t) {
     drawBg();
     text('PICK YOUR POISON', VW / 2, 80, 40, C.player);
-    text('ESC back', VW / 2, 120, 14, C.dim, 'center', 'normal');
+    text(`${MODE[game.mode].name} · ESC back`, VW / 2, 120, 14, C.dim, 'center', 'normal');
     for (let i = 0; i < LEVELS.length; i++) {
-      const r = selectRect(i), open = i < save.unlocked, on = i === game.sel;
+      const r = selectRect(i), open = i < game.unlocked(), on = i === game.sel;
       ctx.fillStyle = on ? 'rgba(255,79,139,0.25)' : 'rgba(232,230,240,0.06)';
       roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
       ctx.strokeStyle = on ? C.player : open ? C.blockEdge : 'rgba(232,230,240,0.15)'; ctx.lineWidth = on ? 3 : 1.5; ctx.stroke();
@@ -672,10 +817,63 @@
     if (s) text(s.name, VW / 2, VH - 70, 22, C.portal);
   }
 
+  const MCARD = { w: 270, h: 260, gap: 30, top: 140 };
+  function modeRect(i) {
+    const x0 = (VW - (MODES.length * MCARD.w + (MODES.length - 1) * MCARD.gap)) / 2;
+    return { x: x0 + i * (MCARD.w + MCARD.gap), y: MCARD.top, w: MCARD.w, h: MCARD.h };
+  }
+  function modeHit(x, y) {
+    for (let i = 0; i < MODES.length; i++) { const r = modeRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i; }
+    return -1;
+  }
+  function drawMode(t) {
+    drawBg();
+    text('CHOOSE YOUR SUFFERING', VW / 2, 80, 36, C.player);
+    const fakeL = { g: 1, invert: false };
+    MODES.forEach((m, i) => {
+      const r = modeRect(i), on = i === game.modeSel, cx = r.x + r.w / 2;
+      ctx.fillStyle = on ? 'rgba(255,79,139,0.22)' : 'rgba(232,230,240,0.06)';
+      roundRect(r.x, r.y, r.w, r.h, 14); ctx.fill();
+      ctx.strokeStyle = on ? C.player : C.blockEdge; ctx.lineWidth = on ? 3 : 1.5; ctx.stroke();
+      // little preview
+      const bob = (k) => Math.abs(Math.sin(t * 3 + k)) * 0.5;
+      ctx.save(); ctx.translate(cx, r.y + 105); ctx.scale(1.6, 1.6); ctx.translate(-cx, -(r.y + 105));
+      const py = (r.y + 105) / TILE;
+      if (m.id === 'single') {
+        drawPlayer({ idx: 0, x: cx / TILE - 0.4, y: py - P.h - bob(0), w: P.w, h: P.h, sx: 1, sy: 1, face: 1 }, fakeL);
+      } else if (m.id === 'multi') {
+        drawPlayer({ idx: 0, x: cx / TILE - 1.2, y: py - P.h - bob(0), w: P.w, h: P.h, sx: 1, sy: 1, face: 1 }, fakeL);
+        drawPlayer({ idx: 1, x: cx / TILE + 0.4, y: py - P.h - bob(1.5), w: P.w, h: P.h, sx: 1, sy: 1, face: -1 }, fakeL);
+      }
+      ctx.restore();
+      if (m.id === 'special') {
+        const wob = Math.sin(t * 5) * 0.12;
+        ctx.save(); ctx.translate(cx, r.y + 85); ctx.rotate(wob);
+        text('?', 0, 0, 96, C.portal); ctx.restore();
+        for (let k = 0; k < 5; k++) {
+          const a = t * 1.5 + k * 1.256;
+          ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 6 + k);
+          ctx.fillStyle = k % 2 ? C.player : C.spike;
+          ctx.fillRect(cx + Math.cos(a) * 70 - 2, r.y + 85 + Math.sin(a) * 40 - 2, 4, 4);
+        }
+        ctx.globalAlpha = 1;
+      }
+      text(m.name, cx, r.y + 175, 22, on ? C.text : C.blockEdge);
+      text(m.sub, cx, r.y + 205, 14, C.dim, 'center', 'normal');
+      const lvl = Math.min(save.progress[m.id] || 1, LEVELS.length);
+      text(`level ${lvl} / ${LEVELS.length}`, cx, r.y + 235, 13, C.danger, 'center', 'normal');
+    });
+    const m = MODES[game.modeSel];
+    text(m.hint, VW / 2, MCARD.top + MCARD.h + 45, 15, C.portal, 'center', 'normal');
+    if (m.players > 1 && matchMedia('(pointer: coarse)').matches) text('2-player modes need a keyboard', VW / 2, MCARD.top + MCARD.h + 72, 13, C.danger, 'center', 'normal');
+    text('←/→ choose · ENTER play · L pick level · ESC back', VW / 2, VH - 30, 14, C.dim, 'center', 'normal');
+  }
+
   function drawEnd(t) {
     drawBg();
     text('YOU WIN.', VW / 2, 170, 80, C.portal);
-    text('for real this time.', VW / 2, 230, 18, C.text, 'center', 'normal');
+    const endSub = { single: 'for real this time.', multi: 'together. somehow.', special: 'and you are STILL chained together.' };
+    text(endSub[game.mode], VW / 2, 230, 18, C.text, 'center', 'normal');
     text(`total deaths: ${save.deaths}`, VW / 2, 300, 30, C.danger);
     const rank = save.deaths < 25 ? 'suspiciously good' : save.deaths < 60 ? 'respectable suffering' : save.deaths < 120 ? 'certified rager' : 'controller is in the wall';
     text(`rank: ${rank}`, VW / 2, 345, 18, C.text, 'center', 'normal');
@@ -696,6 +894,7 @@
 
     baseTransform();
     if (game.state === 'title') drawTitle(game.time);
+    else if (game.state === 'mode') drawMode(game.time);
     else if (game.state === 'select') drawSelect(game.time);
     else if (game.state === 'play') drawLevel(game.level);
     else drawEnd(game.time);
@@ -705,8 +904,8 @@
 
   // deterministic hooks for automated tests (no effect on normal play)
   window.__ragebait = {
-    game, keys, pressed,
-    load(i) { game.start(i); },
+    game, keys: ctl[0], pressed: pressed[0], ctl, pressedAll: pressed,
+    load(i, mode = 'single') { game.setMode(mode); game.start(i); },
     step(n = 1) { for (let i = 0; i < n; i++) game.level.step(STEP); },
     STEP,
   };

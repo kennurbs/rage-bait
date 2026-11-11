@@ -19,6 +19,8 @@
  *   L.moveDoor(door, x, floorY, speed)
  *   L.say(str)                    speech bubble above the player
  *   L.px / L.py                   player centre; L.near(obj, d); L.touch(obj); L.player
+ *                                 (in 2-player modes, conditions are checked for each player
+ *                                 and these refer to the player being checked)
  *   L.g, L.invert, L.jumpDelay    gravity sign, inverted controls, jump input lag (s)
  */
 window.LEVELS = [
