@@ -74,6 +74,78 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         if (st.s === 6) { k.right = 1; return J(st, 'c', p.grounded && L.px > 14.2); }
         return false;
       },
+      // 11 Groundwork: run fast over crumble, jump gaps, avoid saw
+      (L, k, st) => {
+        k.right = 1;
+        return J(st, 'a', L.px > 7.2 && L.player.grounded) || J(st, 'b', L.px > 13.5 && L.player.grounded) ||
+               J(st, 'c', L.px > 20.8 && L.player.grounded) || J(st, 'd', L.px > 24.5 && L.player.grounded);
+      },
+      // 12 Gravity Well: use pads, avoid hidden spikes
+      (L, k, st) => {
+        k.right = 1;
+        return J(st, 'a', L.px > 5.5 && L.player.grounded && L.g > 0) ||
+               J(st, 'b', L.px > 10 && L.player.grounded) ||
+               J(st, 'c', L.px > 13.5 && L.player.grounded && L.g > 0) ||
+               J(st, 'd', L.px > 25, 'skip');
+      },
+      // 13 Saw Alley: run, avoid saws
+      (L, k, st) => { k.right = 1; return J(st, 'a', L.px > 28.5 && L.player.grounded); },
+      // 14 Flip Flop: use pads, lag-adjusted jumps (press early)
+      (L, k, st) => {
+        k.right = 1;
+        return J(st, 'a', L.px > 3.4 && L.player.grounded && L.g > 0) ||
+               J(st, 'b', L.px > 10.5 && L.player.grounded) ||
+               J(st, 'c', L.px > 18.5 && L.player.grounded && L.g > 0) ||
+               J(st, 'd', L.px > 25.4 && L.player.grounded);
+      },
+      // 15 Mirror Maze: ignore mirror/invert, navigate to actual door coords
+      (L, k, st) => {
+        // the real second door is placed at x=2, so after mirror is off, go right to door at x≈29
+        if (L.invert) { k.left = 1; k.right = 0; } else { k.right = 1; k.left = 0; }
+        return J(st, 'a', L.px > 10 && L.player.grounded) || J(st, 'b', L.px > 25 && L.player.grounded);
+      },
+      // 16 Thin Ice: run fast, jump at halfway for crusher dodge, then jump final saw
+      (L, k, st) => {
+        k.right = 1;
+        return J(st, 'a', L.px > 14.5 && L.player.grounded) || J(st, 'b', L.px > 27.5 && L.player.grounded);
+      },
+      // 17 The Betrayal: avoid evil flag, jump to hidden platform
+      (L, k, st) => {
+        const p = L.player;
+        if (!st.s) { k.right = 1; if (L.px > 24.5 && p.grounded) st.s = 1; return J(st, 'a', L.px > 3.5 && p.grounded); }
+        // jump to hidden platform at y=12 x=25
+        k.left = 0; k.right = 0;
+        if (!st.s2) { if (p.grounded && p.y > 14) { k.right = 1; return J(st, 'b', p.grounded && L.px > 25.1); } if (p.y < 13) st.s2 = 1; return false; }
+        k.right = 1; return false;
+      },
+      // 18 Crusher Gauntlet: dash through each corridor, stay away from landing zones
+      (L, k, st) => {
+        k.right = 1;
+        return J(st, 'a', L.px > 5.6 && L.player.grounded) || J(st, 'b', L.px > 10.5 && L.player.grounded) ||
+               J(st, 'c', L.px > 16.5 && L.player.grounded) || J(st, 'd', L.px > 22.5 && L.player.grounded);
+      },
+      // 19 Chaos Engine: navigate with shifting controls
+      (L, k, st) => {
+        if (L.invert) { k.left = 1; k.right = 0; } else { k.right = 1; k.left = 0; }
+        return J(st, 'a', L.px > 8.6 && L.player.grounded) || J(st, 'b', L.px > 16.6 && L.player.grounded) ||
+               J(st, 'c', L.px > 24.6 && L.player.grounded);
+      },
+      // 20 The Reckoning: gravity, crumble, invert, crusher, lag, hidden platform
+      (L, k, st) => {
+        const p = L.player;
+        if (L.invert) { k.left = 1; k.right = 0; } else { k.right = 1; k.left = 0; }
+        if (!st.s) {
+          if (J(st, 'a', L.px > 3.5 && p.grounded && L.g > 0)) return true;
+          if (J(st, 'b', L.px > 7.5 && p.grounded)) return true;
+          if (p.grounded && L.px > 10 && L.px < 18) st.s = 1;
+          return false;
+        }
+        if (!st.s2 && p.grounded && L.px > 22) st.s2 = 1;
+        if (st.s2) {
+          if (J(st, 'c', L.px > 24 && p.grounded)) return true;
+        }
+        return false;
+      },
     ];
 
     // ---- two-player policies: (L, A, B, st). A = player 1, B = player 2.
@@ -161,6 +233,83 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         if (st.ph === 2) { B.to(26.5); if (lift.y <= 14.3 && !st.r) A.to(10); if (lift.y > 14.3 || st.r) { st.r = 1; ride(A, 'on'); if (A.g && A.y < 14.3 && Math.abs(A.p.y + A.p.h - lift.y) < 0.05) st.ph = 3; } return; }
         if (st.ph === 3) { B.to(24.7); if (lift.y < 6.1 && !st.k && A.to(16.6)) A.jumpOnce('sp'); if (st.k || A.p.vy < 0) { st.k = 1; A.go(1); } if (A.x > 21 && A.g && A.y < 7) st.ph = 4; return; }
         if (st.ph === 4) { const d = L.doors[0]; for (const P of [A, B]) { if (d.y > 10 || d.tween) { if (P.y < 7) { P.go(-1); if (P.g && P.x < 22.6) P.jumpOnce('back'); } else P.to(25.6); } else P.to(29.6); } }
+      },
+      // 11 Hot Potato: A stands on button, B sprints through gate
+      (L, A, B, st) => {
+        const gate = L.blocks[1], btn = L.buttons[0];
+        if (!st.ph) { A.to(7.7); if (btn.down && gate.y < 9) st.ph = 1; return; }
+        if (st.ph === 1) { A.to(7.7); B.go(1); if (B.x > 18.4) B.jumpOnce('sp'); if (B.p.done) st.ph = 2; return; }
+        if (st.ph === 2) { A.go(1); if (A.x > 18.4) A.jumpOnce('sp'); return; }
+      },
+      // 12 Switcheroo: A presses right btn, B presses left btn, both pass through opposite gates
+      (L, A, B, st) => {
+        const gateL = L.blocks[0], gateR = L.blocks[1], btnL = L.buttons[0], btnR = L.buttons[1];
+        if (!st.ph) {
+          A.to(8.7); B.to(22.7);
+          if (btnL.down && btnR.down) st.ph = 1;
+          return;
+        }
+        if (st.ph === 1) { A.go(-1); B.go(1); if (A.x < 2.5) A.jumpOnce('in'); if (B.x > 29) B.jumpOnce('in'); return; }
+      },
+      // 13 Chain Reaction: A on b1, B on b2, then both rush b3
+      (L, A, B, st) => {
+        const b1 = L.buttons[0], b2 = L.buttons[1], b3 = L.buttons[2];
+        if (!st.ph) { A.to(5.7); B.to(5.7); if (b1.down) st.ph = 1; return; }
+        if (st.ph === 1) { A.to(5.7); B.to(16.7); if (b2.down) st.ph = 2; return; }
+        if (st.ph === 2) { A.go(1); B.go(1); return; }
+      },
+      // 14 Gravity Split: simple - both go right
+      (L, A, B, st) => {
+        for (const P of [A, B]) { P.go(1); if (P.x > 25 && P.g) P.jumpOnce('sp'); }
+      },
+      // 15 Detonator: quick tap each button, sprint
+      (L, A, B, st) => {
+        const b1 = L.buttons[0], b2 = L.buttons[1];
+        if (!st.ph) { A.to(7.7); if (b1.down && b1.held < 1) st.ph = 1; return; }
+        if (st.ph === 1) { A.go(1); B.to(16.7); if (b2.down && b2.held < 1) st.ph = 2; return; }
+        if (st.ph === 2) { A.go(1); B.go(1); return; }
+      },
+      // 16 The See-Saw: A on left plat btn, B on right, both advance
+      (L, A, B, st) => {
+        const btnL = L.buttons[0], btnR = L.buttons[1];
+        if (!st.ph) { A.to(10.7); B.to(20.7); if (btnL.down && btnR.down) st.ph = 1; return; }
+        if (st.ph === 1) { for (const P of [A, B]) P.to(16.15); return; }
+      },
+      // 17 Mimic City: use real crates, avoid mimics
+      (L, A, B, st) => {
+        const realCrate = L.blocks.find(b => b.crate && !b.mimic && b.x === 5);
+        const crate2 = L.blocks.find(b => b.crate && !b.mimic && b.x === 18);
+        const btn = L.buttons[0], btn2 = L.buttons[1];
+        if (!st.ph) { A.to(8.45); if (near(A, 8.45) && A.g) { B.go(-1); if (B.x < 10.6) B.jumpOnce('head'); if (B.p.onP) st.ph = 1; } else B.to(10.6); return; }
+        if (st.ph === 1) { B.go(-1); B.jumpOnce('up'); if (B.y < 11 && B.g) st.ph = 2; return; }
+        if (st.ph === 2) { A.to(13); if (realCrate && realCrate.y > 13.5) { if (btn.down) st.ph = 3; } else { if (B.g && B.x < (realCrate ? realCrate.x + 2 : 7) && B.x > 1) B.go(1); } return; }
+        if (st.ph === 3) { for (const P of [A, B]) { P.go(1); if (P.x > 20 && crate2 && P.g && P.x < crate2.x + 2) P.jumpOnce('cr'); if (btn2.down) P.to(27.7); } return; }
+      },
+      // 18 Rope-a-Dope: both go right, jump gaps; ignore swap (positions are correct)
+      (L, A, B, st) => {
+        for (const P of [A, B]) {
+          P.go(1);
+          for (const [x, n] of [[8.5, 'a'], [16.5, 'b'], [24.5, 'c']]) if (P.x > x && P.g) P.jumpOnce(n);
+        }
+      },
+      // 19 The Big Push: use real crate to open gate
+      (L, A, B, st) => {
+        const realCrate = L.blocks.find(b => b.crate && !b.mimic && b.x === 4);
+        const btn = L.buttons[0];
+        if (!st.ph) { A.to(8.45); if (near(A, 8.45) && A.g) { B.go(-1); if (B.x < 10.6) B.jumpOnce('head'); if (B.p.onP) st.ph = 1; } else B.to(10.6); return; }
+        if (st.ph === 1) { B.go(-1); B.jumpOnce('up'); if (B.y < 11 && B.g) st.ph = 2; return; }
+        if (st.ph === 2) { A.to(13); if (realCrate && realCrate.y > 13.5 && btn.down) st.ph = 3; else if (realCrate && B.g && B.x < realCrate.x + 2 && B.x > 1) B.go(1); return; }
+        if (st.ph === 3) { for (const P of [A, B]) { P.go(1); if (P.x > 20 && P.g) P.jumpOnce('sp'); P.to(28.7); } return; }
+      },
+      // 20 No Way Out: lift to upper platform, go to real door
+      (L, A, B, st) => {
+        const lift = L.blocks.find(b => b.h === 0.6);
+        const ride = (P, nm) => { if (P.g && P.y > 14) { if (P.x < 13.1) P.go(1); else { P.go(1); P.jumpOnce(nm); } } else if (!P.g && P.x > 14.8) P.go(0); else if (!P.g) P.go(1); };
+        if (!st.ph) { ride(B, 'on'); if (lift && B.g && Math.abs(B.p.y + B.p.h - lift.y) < 0.1) st.ph = 1; return; }
+        if (st.ph === 1) { A.to(5.7); if (lift && lift.y < 6.5 && !st.j && B.to(15.6)) B.jumpOnce('sp'); if (st.j || B.p.vy < 0) { st.j = 1; B.go(1); } if (B.x > 19 && B.g && B.y < 7) st.ph = 2; return; }
+        if (st.ph === 2) { B.to(20.5); if (lift && lift.y <= 14.3 && !st.r) A.to(9); if (!lift || lift.y > 14.3 || st.r) { st.r = 1; ride(A, 'on'); if (A.g && A.y < 14.3) st.ph = 3; } return; }
+        if (st.ph === 3) { B.to(20.5); if (lift && lift.y < 6.5 && !st.k && A.to(15.6)) A.jumpOnce('sp'); if (st.k || A.p.vy < 0) { st.k = 1; A.go(1); } if (A.x > 19 && A.g && A.y < 7) st.ph = 4; return; }
+        if (st.ph === 4) { for (const P of [A, B]) P.to(20.5); }
       },
     ];
 

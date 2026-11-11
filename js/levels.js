@@ -43,6 +43,7 @@
  *   Players can stand on each other's heads.
  */
 const SINGLE = [
+
   {
     name: 'Just Walk Right',
     build(L) {
@@ -206,6 +207,278 @@ const SINGLE = [
         L.fakeWin();
         L.wait(1.1, () => { L.drop(trap, 0); L.banner = { text: 'JK', sub: 'that one was fake', t: 0 }; });
       });
+    },
+  },
+  // ---------------------------------------------------------------- levels 11-20 (single-player, harder)
+  {
+    name: 'Groundwork',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'The floor is not your friend.');
+      // solid start
+      L.block(0, 15, 6, 3);
+      // three crumble sections that all trigger together when first is stepped on
+      const c1 = [], c2 = [], c3 = [];
+      for (let x = 6; x < 12; x++) c1.push(L.block(x, 15, 1, 1, { crumble: 0.18 }));
+      L.block(12, 15, 3, 3);
+      for (let x = 15; x < 20; x++) c2.push(L.block(x, 15, 1, 1, { crumble: 0.14 }));
+      L.block(20, 15, 2, 3);
+      for (let x = 22; x < 27; x++) c3.push(L.block(x, 15, 1, 1, { crumble: 0.1 }));
+      L.block(27, 15, 5, 3);
+      // hidden spikes after each safe island
+      const s1 = L.spike(13, 15, 2, 'up', { hidden: true });
+      const s2 = L.spike(20, 15, 1, 'up', { hidden: true });
+      const s3 = L.spike(29, 15, 1, 'up', { hidden: true });
+      L.on(() => L.player.grounded && [...c1].some(b => b.pending || b.falling), () => s1.pop());
+      L.on(() => L.player.grounded && [...c2].some(b => b.pending || b.falling), () => s2.pop());
+      L.on(() => L.px > 25.5, () => s3.pop());
+      // a saw chases once player reaches mid-point
+      const saw = L.saw(-2, 14.2, 0.8);
+      L.on(() => L.px > 12, () => { saw.vx = 7.5; });
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'Gravity Well',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 7, 'Up, down, repeat. Good luck.');
+      L.block(0, 15, 8, 3);
+      L.pad(5, 15, 2, -1);        // flip up
+      L.block(0, 0, 10, 3);       // ceiling becomes floor
+      L.pad(7, 3, 2, 1);          // flip back down
+      L.block(10, 15, 6, 3);
+      L.pad(13, 15, 2, -1);       // flip up again
+      L.block(10, 0, 8, 3);
+      L.pad(16, 3, 2, 1);         // flip down
+      L.block(18, 15, 14, 3);
+      // hidden spikes after each pad zone
+      const s1 = L.spike(9, 3, 2, 'down', { hidden: true });
+      const s2 = L.spike(17, 3, 2, 'down', { hidden: true });
+      L.on(() => L.g < 0 && L.px > 7.4, () => s1.pop());
+      L.on(() => L.g < 0 && L.px > 15.4, () => s2.pop());
+      // door runs away once player gets close
+      const d = L.door(28, 15);
+      let fled = false;
+      L.on(() => !fled && L.near(d, 3), () => { fled = true; L.moveDoor(d, 22, 15, 35); L.say('nope'); });
+      L.door(29, 15); // real door
+    },
+  },
+  {
+    name: 'Saw Alley',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(4, 6, 'Timing is everything. Speed is not.');
+      L.block(0, 15, 32, 3);
+      // three saws at different heights, moving across a corridor
+      const s1 = L.saw(10, 14.2, 0.7);
+      const s2 = L.saw(18, 13.5, 0.7);
+      const s3 = L.saw(26, 14.2, 0.7);
+      L.on(() => L.px > 6, () => { s1.vx = 5; });
+      L.on(() => L.px > 14, () => { s2.vx = -5; });
+      L.on(() => L.px > 22, () => { s3.vx = 5; });
+      // invisible walls that reveal as narrow corridors
+      L.block(9, 10, 1, 5, { hidden: true });
+      L.block(17, 10, 1, 5, { hidden: true });
+      L.block(25, 10, 1, 5, { hidden: true });
+      const sp = L.spike(29, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 27.5, () => sp.pop());
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'Flip Flop',
+    build(L) {
+      L.jumpDelay = 0.18;
+      L.spawn(2, 15);
+      L.text(3, 6, 'Lag AND gravity. You\'re welcome.');
+      L.block(0, 15, 6, 3);
+      L.block(0, 0, 6, 3);
+      L.pad(3, 15, 2, -1);
+      L.block(8, 0, 6, 3);
+      L.block(8, 13, 6, 5);
+      L.spike(8, 13, 6, 'down');
+      L.pad(11, 3, 2, 1);
+      L.block(16, 15, 6, 3);
+      L.block(16, 0, 6, 3);
+      L.pad(19, 15, 2, -1);
+      L.block(24, 0, 8, 3);
+      L.pad(26, 3, 2, 1);
+      L.block(28, 15, 4, 3);
+      L.on(() => L.px > 29, () => { L.jumpDelay = 0; L.say('lag gone. too late.'); });
+      const sp = L.spike(29, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 27.4, () => sp.pop());
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'Mirror Maze',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Left is right. Then it isn\'t.');
+      L.block(0, 15, 10, 3);
+      L.block(12, 15, 8, 3);
+      L.block(22, 15, 10, 3);
+      L.on(() => L.px > 6, () => { L.mirror(); L.say('backwards!'); });
+      const s1 = L.spike(13, 15, 2, 'up', { hidden: true });
+      L.on(() => L.px > 11.5, () => s1.pop());
+      L.on(() => L.px > 18, () => { L.mirror(false); L.say('normal again'); });
+      L.on(() => L.px > 22, () => { L.invert = true; L.say('and inverted'); });
+      const s2 = L.spike(26, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 24.5, () => s2.pop());
+      L.on(() => L.px > 27, () => { L.invert = false; });
+      // door sprints away once reached
+      const d = L.door(29, 15);
+      L.on(() => L.near(d, 2.5), () => { L.moveDoor(d, 2, 15, 50); L.say('see ya!'); L.mirror(); });
+      L.on(() => L.near(d, 2) && d.x < 5, () => { L.say('gotcha'); });
+      L.door(2, 15); // real door placed first (at left after mirror shenanigan)
+    },
+  },
+  {
+    name: 'Thin Ice',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'One step per tile. No second chances.');
+      L.block(0, 15, 4, 3);
+      // very fast-crumble bridge
+      for (let x = 4; x < 28; x++) L.block(x, 15, 1, 1, { crumble: 0.05 });
+      L.block(28, 15, 4, 3);
+      // spikes below the bridge
+      L.block(4, 17, 24, 1);
+      L.spike(4, 17, 24, 'up');
+      // crusher comes down when player crosses halfway
+      const crusher = L.block(13, 0, 6, 8);
+      L.on(() => L.px > 15, () => L.drop(crusher, 0.1, { land: true }));
+      // moving saw across the final platform
+      const saw = L.saw(32, 14.2, 0.8);
+      L.on(() => L.px > 25, () => { saw.vx = -6; });
+      const sp = L.spike(29, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 27.5, () => sp.pop());
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'The Betrayal',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'The flag saves you. Trust the flag.');
+      L.block(0, 15, 32, 3);
+      // a "checkpoint" flag that is EVIL
+      const f = L.flag(16, 15);
+      // big gap that opens up
+      const bridge = L.block(10, 15, 12, 3);
+      L.on(() => L.player.grounded && Math.abs(L.px - 16.5) < 1.3, () => {
+        f.evil = true;
+        L.say('checkpoint saved!');
+        L.wait(0.3, () => L.drop(bridge, 0));
+      });
+      // spikes hidden everywhere
+      const s1 = L.spike(5, 15, 3, 'up', { hidden: true });
+      const s2 = L.spike(22, 15, 4, 'up', { hidden: true });
+      L.on(() => L.px > 3.5, () => s1.pop());
+      L.on(() => L.px > 20.5, () => s2.pop());
+      // door is a fake, real one is behind a hidden block
+      const fake = L.door(28, 15, { fake: true });
+      L.block(25, 12, 2, 1, { hidden: true });
+      L.door(25, 12);
+      L.on(() => L.touch(fake), () => {
+        L.fakeWin();
+        L.wait(1.2, () => { L.banner = { text: 'JK', sub: 'jump to the hidden platform', t: 0, life: 1.8 }; });
+      });
+    },
+  },
+  {
+    name: 'Crusher Gauntlet',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Four crushers. Zero mercy.');
+      L.block(0, 15, 32, 3);
+      // four drop-crushers with tight timing
+      const c1 = L.block(7, 0, 3, 7);
+      const c2 = L.block(13, 0, 3, 7);
+      const c3 = L.block(19, 0, 3, 7);
+      const c4 = L.block(25, 0, 3, 7);
+      L.on(() => L.px > 5.5, () => L.drop(c1, 0.08, { land: true }));
+      L.on(() => L.px > 11.5, () => L.drop(c2, 0.08, { land: true }));
+      L.on(() => L.px > 17.5, () => L.drop(c3, 0.08, { land: true }));
+      L.on(() => L.px > 23.5, () => L.drop(c4, 0.08, { land: true }));
+      // hidden spikes near landing zones
+      const s1 = L.spike(10, 15, 1, 'up', { hidden: true });
+      const s2 = L.spike(16, 15, 1, 'up', { hidden: true });
+      const s3 = L.spike(22, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 9, () => s1.pop());
+      L.on(() => L.px > 15, () => s2.pop());
+      L.on(() => L.px > 21, () => s3.pop());
+      // saw starts following once second crusher drops
+      const saw = L.saw(-2, 14.2, 0.8);
+      L.on(() => c2.falling, () => { saw.vx = 8; });
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Chaos Engine',
+    build(L) {
+      L.jumpDelay = 0.14;
+      L.spawn(2, 15);
+      L.text(3, 5, 'Lag. Invert. Mirror. All of it.');
+      L.block(0, 15, 8, 3);
+      L.block(10, 15, 6, 3);
+      L.block(18, 15, 6, 3);
+      L.block(26, 15, 6, 3);
+      // controls randomly scramble
+      L.on(() => L.px > 5, () => { L.invert = true; L.say('inverted!'); });
+      L.on(() => L.px > 10, () => { L.mirror(); L.say('and mirrored'); });
+      L.on(() => L.px > 16, () => { L.invert = false; L.say('less inverted'); });
+      L.on(() => L.px > 22, () => { L.mirror(false); L.invert = true; L.say('still inverted lol'); });
+      L.on(() => L.px > 28, () => { L.invert = false; L.jumpDelay = 0; L.say('you\'re free'); });
+      const s1 = L.spike(10, 15, 1, 'up', { hidden: true });
+      const s2 = L.spike(18, 15, 1, 'up', { hidden: true });
+      const s3 = L.spike(26, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 8.6, () => s1.pop());
+      L.on(() => L.px > 16.6, () => s2.pop());
+      L.on(() => L.px > 24.6, () => s3.pop());
+      const saw = L.saw(-2, 14.2, 0.9);
+      L.on(() => L.px > 7, () => { saw.vx = 9; });
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'The Reckoning',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Everything. All at once. Final level.');
+      L.block(0, 15, 6, 3);
+      // gravity flip zone
+      L.block(0, 0, 8, 3);
+      L.pad(4, 15, 2, -1);
+      L.block(6, 0, 4, 3);
+      L.pad(8, 3, 2, 1);
+      // crumble section
+      for (let x = 10; x < 18; x++) L.block(x, 15, 1, 1, { crumble: 0.1 });
+      L.block(18, 15, 4, 3);
+      // inverted controls
+      L.on(() => L.px > 14, () => { L.invert = true; L.say('and inverted'); });
+      L.on(() => L.px > 22, () => { L.invert = false; L.say('you\'re welcome'); });
+      // crusher at the gap
+      const crush = L.block(19, 0, 4, 10);
+      L.on(() => L.px > 17, () => L.drop(crush, 0.05, { land: true }));
+      // lag for the final stretch
+      L.block(22, 15, 10, 3);
+      L.on(() => L.px > 22, () => { L.jumpDelay = 0.2; L.say('lag!'); });
+      // dual saws
+      const saw1 = L.saw(-2, 14.2, 0.75);
+      const saw2 = L.saw(34, 14.2, 0.75);
+      L.on(() => L.px > 8, () => { saw1.vx = 7; });
+      L.on(() => L.px > 20, () => { saw2.vx = -7; });
+      // fake door then real one on hidden platform
+      const fake = L.door(28, 15, { fake: true });
+      L.block(23, 11, 2, 1, { hidden: true });
+      L.door(23, 11);
+      L.on(() => L.touch(fake), () => {
+        L.fakeWin();
+        L.wait(1.1, () => { L.banner = { text: 'JK', sub: 'check above you', t: 0, life: 2 }; });
+      });
+      L.on(() => L.px > 25, () => { L.jumpDelay = 0; });
     },
   },
 ];
@@ -429,6 +702,256 @@ const MULTI = [
       L.on(() => L.touch(fake), () => {
         L.fakeWin();
         L.wait(1.1, () => { L.drop(trap, 0); L.banner = { text: 'JK', sub: 'did you really think...', t: 0, life: 1.5 }; });
+      });
+    },
+  },
+  // ---------------------------------------------------------------- levels 11-20 (multiplayer, harder)
+  {
+    name: 'Hot Potato',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'The plate is on a timer. Move fast.');
+      L.block(0, 15, 32, 3);
+      // A button that only stays open for 2 seconds
+      const btn = L.button(7, 15, 1.4, { color: 'red' });
+      let openUntil = -1;
+      L.on(() => btn.down && openUntil < 0, () => { openUntil = L.t + 2; L.say('2 seconds!'); }, { repeat: true });
+      // gate that only opens while timer is live
+      L.block(16, 0, 2, 3);
+      const gate = L.block(16, 3, 2, 12);
+      L.gate(gate, 0, -6, () => L.t < openUntil && openUntil > 0, { speed: 20, closeSpeed: 40, color: 'red' });
+      // spikes on each side
+      const sl = L.spike(4, 15, 2, 'up', { hidden: true });
+      const sr = L.spike(20, 15, 2, 'up', { hidden: true });
+      L.on(() => btn.down, () => sl.pop());
+      L.on(() => L.px > 18.5, () => sr.pop());
+      // door runs when both approach
+      const d = L.door(29, 15);
+      L.on(() => L.all(p => p.x + 0.4 > 25), () => { L.moveDoor(d, 10, 15, 40); L.say('scatter!'); });
+      L.on(() => L.all(p => p.x + 0.4 < 14), () => { L.say('gotcha'); });
+    },
+  },
+  {
+    name: 'Switcheroo',
+    build(L) {
+      L.spawn(4, 15); L.spawn2(26, 15);
+      L.text(4, 5, 'Your partner holds YOUR door.');
+      L.block(0, 15, 8, 3);
+      L.block(0, 0, 2, 3); L.block(2, 0, 2, 12);
+      const gateL = L.block(2, 12, 2, 3);
+      L.block(8, 15, 16, 3);
+      L.block(30, 0, 2, 3); L.block(28, 0, 2, 12);
+      const gateR = L.block(28, 12, 2, 3);
+      L.block(24, 15, 8, 3);
+      const btnL = L.button(22, 15, 1.4, { color: 'green' });   // near right player opens left gate
+      const btnR = L.button(8, 15, 1.4, { color: 'purple' });  // near left player opens right gate
+      L.gate(gateL, 0, -3, () => btnL.down, { speed: 10, closeSpeed: 30, color: 'green' });
+      L.gate(gateR, 0, -3, () => btnR.down, { speed: 10, closeSpeed: 30, color: 'purple' });
+      // spikes pop mid-bridge when players swap sides
+      const smid = L.spike(14, 15, 3, 'up', { hidden: true });
+      L.on(() => L.any(p => p.x + 0.4 > 13 && p.x + 0.4 < 17), () => smid.pop());
+      L.on(() => L.swap, () => { L.say('controls flipped!'); });
+      L.on(() => L.all(p => p.x + 0.4 > 10 && p.x + 0.4 < 22), () => { L.swap = true; });
+      L.on(() => L.all(p => p.x + 0.4 < 4 || p.x + 0.4 > 28), () => { L.swap = false; });
+      L.door(0, 15);   // left door
+      L.door(29, 15);  // right door
+    },
+  },
+  {
+    name: 'Chain Reaction',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Three buttons. Sequential. No repeats.');
+      L.block(0, 15, 32, 3);
+      let stage = 0;
+      const b1 = L.button(5, 15, 1.4, { color: 'green' });
+      const b2 = L.button(16, 15, 1.4, { color: 'purple' });
+      const b3 = L.button(27, 15, 1.4, { color: 'orange' });
+      // pressing wrong order: saw punishes
+      const saw1 = L.saw(10, 14.2, 0.75);
+      const saw2 = L.saw(21, 14.2, 0.75);
+      L.on(() => stage === 0 && b1.down, () => { stage = 1; L.say('1 of 3'); });
+      L.on(() => stage === 1 && b2.down, () => { stage = 2; L.say('2 of 3'); });
+      L.on(() => stage === 2 && b3.down, () => { stage = 3; L.say('unlocked!'); });
+      // out of order triggers saws
+      L.on(() => stage === 0 && (b2.down || b3.down), () => { saw1.vx = 8; saw2.vx = 8; L.say('wrong order!'); }, { repeat: true });
+      L.on(() => stage === 1 && b3.down, () => { saw2.vx = 8; L.say('skip!'); }, { repeat: true });
+      // gate only opens after all 3
+      L.block(21, 0, 2, 4);
+      const finalGate = L.block(21, 4, 2, 11);
+      L.gate(finalGate, 0, -11, () => stage >= 3, { speed: 6, color: 'orange' });
+      const sp = L.spike(29, 15, 2, 'up', { hidden: true });
+      L.on(() => stage >= 3 && L.px > 27, () => sp.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Gravity Split',
+    build(L) {
+      L.spawn(2, 15); L.spawn2(2, 2);
+      L.text(3, 8, 'One above, one below. Both upside down at once.');
+      L.block(0, 15, 32, 3);
+      L.block(0, 0, 32, 3);
+      // top player starts flipped
+      L.on(() => L.all(p => p.grounded), () => { if (L.g > 0) return; }, { repeat: true });
+      L.pad(5, 15, 2, -1);
+      L.pad(5, 3, 2, 1);
+      // platforms for top lane
+      L.block(10, 2, 8, 1); L.block(20, 2, 8, 1);
+      // platforms for bottom lane
+      L.block(10, 15, 8, 1); L.block(20, 15, 8, 1);
+      // gate needs both on respective buttons
+      L.block(16, 4, 2, 11);
+      const gate = L.block(16, 4, 2, 7);
+      const bTop = L.button(8, 3, 1.4, { color: 'purple' });
+      const bBot = L.button(8, 15, 1.4, { color: 'purple' });
+      L.gate(gate, 0, -7, () => bTop.down && bBot.down, { speed: 8, color: 'purple' });
+      const sp = L.spike(26, 15, 2, 'up', { hidden: true });
+      L.on(() => L.py > 10 && L.px > 24, () => sp.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Detonator',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Hold it too long and it blows.');
+      L.block(0, 15, 32, 3);
+      // three buttons that explode (spawn saws) if held more than 1.5 s
+      const b1 = L.button(7, 15, 1.4, { color: 'red' });
+      const b2 = L.button(16, 15, 1.4, { color: 'red' });
+      const b3 = L.button(25, 15, 1.4, { color: 'red' });
+      // gates require short taps
+      L.block(11, 0, 2, 4);
+      const g1 = L.block(11, 4, 2, 11);
+      L.block(20, 0, 2, 4);
+      const g2 = L.block(20, 4, 2, 11);
+      L.gate(g1, 0, -5, () => b1.down, { speed: 25, closeSpeed: 60, color: 'red' });
+      L.gate(g2, 0, -5, () => b2.down, { speed: 25, closeSpeed: 60, color: 'red' });
+      // overheld: a saw spawns
+      L.on(() => b1.held > 1.5, () => { const s = L.saw(7, -1, 0.7); s.vy = 18; L.say('held too long!'); }, { repeat: true });
+      L.on(() => b2.held > 1.5, () => { const s = L.saw(16, -1, 0.7); s.vy = 18; L.say('release!'); }, { repeat: true });
+      L.on(() => b3.held > 1.5, () => { const s = L.saw(25, -1, 0.7); s.vy = 18; L.say('oops'); }, { repeat: true });
+      const sp = L.spike(29, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 27.5, () => sp.pop());
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'The See-Saw',
+    build(L) {
+      L.spawn(4, 15); L.spawn2(26, 15);
+      L.text(3, 5, 'One up, one down. Neither stays.');
+      L.block(0, 15, 8, 3); L.block(24, 15, 8, 3);
+      // central platform that tilts: left side holds one, right holds the other
+      const platL = L.block(8, 13, 7, 2);
+      const platR = L.block(17, 13, 7, 2);
+      const btnL = L.button(10, 13, 1.4, { color: 'orange' });
+      const btnR = L.button(20, 13, 1.4, { color: 'green' });
+      // when left is pressed, right plate drops; vice versa
+      L.gate(platR, 0, 2, () => btnL.down && !btnR.down, { speed: 8, closeSpeed: 12, color: 'orange' });
+      L.gate(platL, 0, 2, () => btnR.down && !btnL.down, { speed: 8, closeSpeed: 12, color: 'green' });
+      L.block(14, 0, 4, 3); // top arch
+      const archGate = L.block(14, 3, 4, 12);
+      L.gate(archGate, 0, -12, () => btnL.down && btnR.down, { speed: 6, color: 'purple' });
+      const sp1 = L.spike(10, 13, 3, 'up', { hidden: true });
+      const sp2 = L.spike(19, 13, 3, 'up', { hidden: true });
+      L.on(() => L.any(p => p.x + 0.4 > 9 && p.x + 0.4 < 11.5), () => sp1.pop());
+      L.on(() => L.any(p => p.x + 0.4 > 20 && p.x + 0.4 < 22.5), () => sp2.pop());
+      L.door(16, 15);
+    },
+  },
+  {
+    name: 'Mimic City',
+    build(L) {
+      L.spawn(11, 15);
+      L.text(10, 5, 'Some crates are friends. Some are not.');
+      L.block(0, 11, 8, 7); L.block(8, 15, 24, 3);
+      // four crates; two mimic, two real
+      L.crate(2, 11, 1, { mimic: true });
+      const crate1 = L.crate(5, 11);
+      L.crate(14, 15, 1, { mimic: true });
+      const crate2 = L.crate(18, 15);
+      const btn = L.button(8.1, 15, 2.4, { color: 'orange' });
+      const btn2 = L.button(22, 15, 2.4, { color: 'purple' });
+      const cage = [L.block(26, 10, 4.5, 0.5), L.block(26, 10.5, 0.5, 4.5), L.block(30, 10.5, 0.5, 4.5)];
+      cage.forEach(c => L.gate(c, 0, -7, () => btn.down && btn2.down, { speed: 3, closeSpeed: 20, color: 'orange' }));
+      const sp = L.spike(21, 15, 2, 'up', { hidden: true });
+      L.on(() => crate1.y > 13.5, () => sp.pop());
+      L.on(() => crate2.y > 13.5, () => { L.say('second button!'); });
+      L.door(27.65, 15);
+    },
+  },
+  {
+    name: 'Rope-a-Dope',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Controls trade hands. Again. And again.');
+      L.block(0, 15, 8, 3);
+      L.block(10, 15, 6, 3);
+      L.block(18, 15, 6, 3);
+      L.block(26, 15, 6, 3);
+      // controls swap every few seconds
+      let swapTimer = 0;
+      L.on(() => { swapTimer += 1 / 120; if (swapTimer > 2.8 && L.px > 5) { swapTimer = 0; L.swap = !L.swap; L.say(L.swap ? 'swapped!' : 'back!'); } return false; }, () => {}, { repeat: true });
+      const s1 = L.spike(10, 15, 1, 'up', { hidden: true });
+      const s2 = L.spike(18, 15, 1, 'up', { hidden: true });
+      const s3 = L.spike(26, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 8.6, () => s1.pop());
+      L.on(() => L.px > 16.6, () => s2.pop());
+      L.on(() => L.px > 24.6, () => s3.pop());
+      const saw = L.saw(-2, 14.2, 0.85);
+      L.on(() => L.px > 6, () => { saw.vx = 7; });
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'The Big Push',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Crates everywhere. Only one matters.');
+      L.block(0, 11, 6, 7); L.block(6, 15, 26, 3);
+      // six crates: five mimic, one real
+      L.crate(1, 11, 1, { mimic: true });
+      L.crate(2, 11, 1, { mimic: true });
+      L.crate(3, 11, 1, { mimic: true });
+      const realCrate = L.crate(4, 11);
+      L.crate(10, 15, 1, { mimic: true });
+      L.crate(14, 15, 1, { mimic: true });
+      const btn = L.button(24, 15, 2.4, { color: 'orange' });
+      const cage = [L.block(27, 10, 4.5, 0.5), L.block(27, 10.5, 0.5, 4.5), L.block(31, 10.5, 0.5, 4.5)];
+      cage.forEach(c => L.gate(c, 0, -7, () => btn.down, { speed: 3, closeSpeed: 20, color: 'orange' }));
+      L.on(() => L.players.some(p => p.done), () => L.wait(0.4, () => { realCrate.gone = true; L.say('crate broke'); }));
+      const sp = L.spike(21, 15, 2, 'up', { hidden: true });
+      L.on(() => realCrate.y > 13.5, () => sp.pop());
+      L.door(28.65, 15);
+    },
+  },
+  {
+    name: 'No Way Out',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 4, 'Two doors. One real. One isn\'t. Neither is obvious.');
+      L.block(0, 15, 24, 3);
+      const trap = L.block(24, 15, 8, 3);
+      L.block(17, 6, 15, 1);
+      // lift needs cooperative button presses
+      const lift = L.block(14, 14.4, 3, 0.6);
+      const b1 = L.button(5, 15, 1.4, { color: 'blue' });
+      const b2 = L.button(26, 6, 1.4, { color: 'blue' });
+      let hic = -1;
+      L.gate(lift, 0, -8.4, () => L.t >= hic && (b1.down || b2.down), { speed: 4, color: 'blue' });
+      L.on(() => lift.y < 10, () => { hic = L.t + 1; L.say('careful'); });
+      // spikes at top platform after reaching it
+      const st = L.spike(17, 6, 3, 'up', { hidden: true });
+      L.on(() => L.py < 7 && L.px < 20, () => st.pop());
+      // fake door visible, real door hidden
+      const fake = L.door(28, 15, { fake: true });
+      L.block(19, 6, 2, 1, { hidden: true });
+      L.door(19, 6);
+      L.on(() => L.touch(fake), () => {
+        L.fakeWin();
+        L.wait(1.2, () => { L.drop(trap, 0); L.mirror(); L.banner = { text: 'JK', sub: 'platform above has the real door', t: 0, life: 2 }; });
       });
     },
   },
