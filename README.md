@@ -13,15 +13,25 @@ python3 -m http.server 8000
 
 then visit http://localhost:8000.
 
-| Action  | Keys                 |
-|---------|----------------------|
-| Move    | ← → or A D           |
-| Jump    | Space, ↑, W, Z (hold to jump higher) |
-| Restart | R                    |
-| Levels  | Esc (or L on title)  |
-| Mute    | M                    |
+## Modes
 
-On touch devices, on-screen buttons appear automatically. Progress and death counts are saved in `localStorage`.
+| Mode | Players | What happens |
+|------|---------|--------------|
+| Single player | 1 | You vs. the level. |
+| Multiplayer | 2, one keyboard | Both players have to reach the portal. If either dies, both restart. |
+| Special | 2, one keyboard | Shown as a mystery on the menu. When it starts, the players find out they're chained together: the chain is about 4 tiles long, a player standing on ground anchors a falling partner, and a dangling player can jump off the chain to climb back up. One player reaching the portal takes both through. |
+
+Each mode keeps its own level progress.
+
+## Controls
+
+| Action  | Single player | Player 1 (2-player modes) | Player 2 (2-player modes) |
+|---------|---------------|---------------------------|---------------------------|
+| Move    | ← → or A D    | A D                       | ← →                       |
+| Jump    | Space, ↑, W, Z (hold to jump higher) | W, Space | ↑ |
+
+R restarts, Esc opens level select, M mutes. On the mode screen, L picks a level.
+On touch devices, on-screen buttons appear for single player. Progress and death counts are saved in `localStorage`.
 
 ## Levels and traps
 
@@ -43,7 +53,7 @@ On touch devices, on-screen buttons appear automatically. Progress and death cou
 - `index.html`, `style.css`: page shell and touch controls
 - `js/game.js`: engine (physics, collision, traps, rendering, audio, menus)
 - `js/levels.js`: level scripts; the header comment documents the level API
-- `tests/solve.js`: Playwright bot that proves every level is beatable
+- `tests/solve.js`: Playwright bot that proves every level is beatable in all three modes
 
 ## Making levels
 
