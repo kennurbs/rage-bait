@@ -15,7 +15,9 @@
     spike: '#ffd23f', player: '#ff4f8b', playerDark: '#c2245c', eye: '#14142b',
     portal: '#3ee6d4', danger: '#ff3b5c', text: '#e8e6f0', dim: 'rgba(232,230,240,0.32)',
     pad: '#a77bff', flag: '#5cff8f', saw: '#c9c9d6',
+    crate: '#c98b4a', crateDark: '#8a5a2b',
   };
+  const LINK = { orange: '#ff9f43', green: '#5cff8f', purple: '#a77bff', red: '#ff3b5c', blue: '#4fb6ff' };
   const FONT = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
   const SKINS = [
     { main: '#ff4f8b', dark: '#c2245c' },
@@ -31,6 +33,9 @@
       label: 'SPECIAL (CHAINED)', hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump' },
   ];
   const MODE = Object.fromEntries(MODES.map((m) => [m.id, m]));
+  const course = (mode) => LEVELS[mode];
+  // single-player keys stay numeric so old saves keep their per-level death counts
+  const dkey = (mode, idx) => (mode === 'single' ? String(idx) : `${mode}:${idx}`);
 
   const DEATH_LINES = [
     'skill issue', 'did you even look?', 'the floor was lava. sort of.', 'classic.',
@@ -183,25 +188,43 @@
   class Level {
     constructor(idx, modeId = 'single') {
       this.idx = idx;
-      this.def = LEVELS[idx];
       this.mode = MODE[modeId];
+      this.def = course(modeId)[idx];
       this.chained = !!this.mode.chained;
       this.blocks = []; this.spikes = []; this.saws = []; this.pads = []; this.flags = [];
       this.doors = []; this.texts = []; this.bubbles = [];
+      this.buttons = []; this.gates = [];
       this.triggers = []; this.timers = [];
-      this.g = 1; this.invert = false; this.jumpDelay = 0; this.t = 0;
+      this.g = 1; this.invert = false; this.swap = false; this.jumpDelay = 0; this.t = 0;
       this.banner = null; this.won = false; this.over = false; this.shakeT = 0; this.shakeMag = 0;
-      this.spawnPt = { x: 2, y: 15 };
+      this.spawnPt = { x: 2, y: 15 }; this.spawnPt2 = null;
       this.players = [];
       this.cur = null;
       this.def.build(this);
       const s = this.spawnPt;
-      for (let i = 0; i < this.mode.players; i++) this.players.push(makePlayer(s.x + i * 1.3, s.y, i));
+      for (let i = 0; i < this.mode.players; i++) {
+        const sp = i === 1 && this.spawnPt2 ? this.spawnPt2 : { x: s.x + i * 1.3, y: s.y };
+        this.players.push(makePlayer(sp.x, sp.y, i));
+      }
       this.cur = this.players[0];
     }
 
     // ---- build API
     spawn(x, floorY) { this.spawnPt = { x, y: floorY }; }
+    spawn2(x, floorY) { this.spawnPt2 = { x, y: floorY }; }
+    // pressure plate; down while a player or crate rests on it
+    button(x, floorY, w = 1.4, o = {}) {
+      const b = { kind: 'button', x, y: floorY, w, color: LINK[o.color || 'orange'], down: false, held: 0, latched: false, latch: !!o.latch };
+      this.buttons.push(b); return b;
+    }
+    // block that slides by (dx, dy) while open() is true and back when false
+    gate(b, dx, dy, open, o = {}) {
+      const g = { b, x0: b.x, y0: b.y, dx, dy, open, speed: o.speed || 8, closeSpeed: o.closeSpeed || o.speed || 8 };
+      b.link = o.color ? LINK[o.color] : null;
+      this.gates.push(g); return g;
+    }
+    crate(x, floorY, size = 1) { return this.block(x, floorY - size, size, size, { crate: true }); }
+    moveBlock(b, x, y, speed = 8) { b.goal = { x, y, speed }; }
     block(x, y, w, h, o = {}) {
       const b = { kind: 'block', x, y, w, h, vy: 0, dx: 0, dy: 0, solid: true, hidden: false, crumble: 0,
         pending: false, falling: false, shakeT: 0, land: false, gone: false, flash: 0, sparkle: Math.random() * 3, ...o };
@@ -236,6 +259,10 @@
     shake(t = 0.2, mag = 0.25) { this.shakeT = Math.max(this.shakeT, t); this.shakeMag = Math.max(this.shakeMag, mag); }
     fakeWin() { this.banner = { text: 'LEVEL COMPLETE', sub: 'well done!', t: 0 }; sfx.win(); }
     get player() { return this.cur; }
+    get other() { return this.players.find((p) => p !== this.cur); }
+    all(fn) { const was = this.cur, ps = this.active(); let ok = ps.length > 0; for (const p of ps) { this.cur = p; if (!fn(p)) { ok = false; break; } } this.cur = was; return ok; }
+    count(fn) { const was = this.cur; let n = 0; for (const p of this.active()) { this.cur = p; if (fn(p)) n++; } this.cur = was; return n; }
+    any(fn) { const was = this.cur; let ok = false; for (const p of this.active()) { this.cur = p; if (fn(p)) { ok = true; break; } } this.cur = was; return ok; }
     get px() { return this.cur.x + this.cur.w / 2; }
     get py() { return this.cur.y + this.cur.h / 2; }
     near(o, d) { return Math.hypot(o.x + o.w / 2 - this.px, o.y + o.h / 2 - this.py) < d; }
@@ -258,6 +285,7 @@
         if (this.t >= tm.at) { this.timers.splice(i, 1); tm.fn(); }
       }
       const live = () => !this.over && !this.won;
+      this.updateButtons(dt);
       if (live()) {
         for (let i = 0; i < this.triggers.length; i++) {
           const tr = this.triggers[i];
@@ -276,11 +304,42 @@
       if (live()) for (const p of this.active()) { this.checkContacts(p); if (!live()) break; }
     }
 
+    updateButtons(dt) {
+      const ps = this.active();
+      for (const bt of this.buttons) {
+        const zone = { x: bt.x, y: bt.y - 0.4, w: bt.w, h: 0.45 };
+        const was = bt.down;
+        bt.down = bt.latched || ps.some((p) => overlap(p, zone)) || this.blocks.some((b) => b.crate && !b.gone && overlap(b, zone));
+        if (bt.down && bt.latch) bt.latched = true;
+        bt.held = bt.down ? bt.held + dt : 0;
+        if (bt.down && !was) sfx.click();
+      }
+    }
+
     stepWorld(dt) {
       const ps = this.active();
+      for (const g of this.gates) {
+        const op = !!g.open();
+        const tx = g.x0 + (op ? g.dx : 0), ty = g.y0 + (op ? g.dy : 0);
+        if (!g.b.goal || g.b.goal.x !== tx || g.b.goal.y !== ty) g.b.goal = { x: tx, y: ty, speed: op ? g.speed : g.closeSpeed };
+      }
       for (const b of this.blocks) {
         if (b.gone) continue;
         const ox = b.x, oy = b.y;
+        if (b.goal && !b.falling) {
+          const gx = b.goal.x - b.x, gy = b.goal.y - b.y, dist = Math.hypot(gx, gy), mv = b.goal.speed * dt;
+          if (dist <= mv) { b.x = b.goal.x; b.y = b.goal.y; } else { b.x += (gx / dist) * mv; b.y += (gy / dist) * mv; }
+        }
+        if (b.crate && !b.falling) {
+          b.vy = Math.min(b.vy + P.grav * dt, P.maxFall);
+          b.y += b.vy * dt;
+          for (const o of this.blocks) {
+            if (o === b || !solid(o) || !overlap(b, o)) continue;
+            if (b.vy > 0) { if (b.vy > 6) sfx.thud(); b.y = o.y - b.h; } else b.y = o.y + o.h;
+            b.vy = 0;
+          }
+          if (b.y > ROWS + 4) b.gone = true;
+        }
         if (b.flash > 0) b.flash -= dt;
         if (b.crumble && !b.pending && !b.falling && ps.some((p) => p.ground === b)) this.drop(b, b.crumble);
         if (b.pending) {
@@ -306,15 +365,16 @@
 
       for (const p of ps) {
         if (this.over) break;
-        // carry the player horizontally with whatever they stand on
+        // carry the player horizontally with whatever (or whoever) they stand on
         if (p.ground && p.ground.dx) p.x += p.ground.dx;
+        if (p.onP && !p.onP.dead && !p.onP.done) p.x += p.onP.lastDx || 0;
         // moving solids push (and crush) the player
         for (const b of this.blocks) {
           if (!solid(b) || (!b.dx && !b.dy) || !overlap(p, b)) continue;
           if (Math.abs(b.dy) >= Math.abs(b.dx)) { p.y = b.dy > 0 ? b.y + b.h : b.y - p.h; p.vy = b.vy || 0; }
           else p.x = b.dx > 0 ? b.x + b.w : b.x - p.w;
           for (const o of this.blocks) {
-            if (o !== b && solid(o) && overlap(p, o)) { this.kill(p); break; }
+            if (o !== b && solid(o) && overlap(p, o)) { this.kill(p, 'crushed'); break; }
           }
           if (this.over) break;
         }
@@ -333,7 +393,8 @@
     }
 
     stepPlayer(p, dt) {
-      const g = this.g, c = ctl[p.idx], pr = pressed[p.idx];
+      const g = this.g, src = this.swap ? 1 - p.idx : p.idx, c = ctl[src], pr = pressed[src];
+      const x0 = p.x;
       let dir = (c.right ? 1 : 0) - (c.left ? 1 : 0);
       if (this.invert) dir = -dir;
       let acc = p.grounded ? P.accG : P.accA;
@@ -363,6 +424,7 @@
       p.x += p.vx * dt;
       for (const b of this.blocks) {
         if (!solid(b) || !overlap(p, b)) continue;
+        if (b.crate && p.vx && this.pushCrate(b, p.vx > 0 ? p.x + p.w - b.x : p.x - (b.x + b.w))) continue;
         this.reveal(b);
         if (p.vx > 0) p.x = b.x - p.w; else if (p.vx < 0) p.x = b.x + b.w;
         p.vx = 0;
@@ -372,7 +434,8 @@
 
       // vertical
       const was = p.grounded;
-      p.grounded = false; p.ground = null;
+      p.grounded = false; p.ground = null; p.onP = null;
+      const foot0 = g > 0 ? p.y + p.h : p.y;
       p.y += p.vy * dt;
       for (const b of this.blocks) {
         if (!solid(b) || !overlap(p, b)) continue;
@@ -381,8 +444,31 @@
         if (p.vy * g > 0) { p.grounded = true; p.ground = b; }
         p.vy = 0;
       }
+      // players can stand on each other's heads
+      if (p.vy * g >= 0) {
+        for (const q of this.active()) {
+          if (q === p || !overlap(p, q)) continue;
+          const head = g > 0 ? q.y : q.y + q.h;
+          if (g > 0 ? foot0 <= head + 0.12 : foot0 >= head - 0.12) {
+            p.y = g > 0 ? q.y - p.h : q.y + q.h;
+            p.vy = 0; p.grounded = true; p.onP = q;
+          }
+        }
+      }
+      p.lastDx = p.x - x0;
       if (p.grounded && !was) { p.sx = 1.25; p.sy = 0.78; p.jumping = false; }
       p.sx = approach(p.sx, 1, dt * 4); p.sy = approach(p.sy, 1, dt * 4);
+    }
+
+    // try to shove a crate sideways by amt tiles; returns false if it is blocked
+    pushCrate(b, amt) {
+      const ox = b.x;
+      b.x += amt;
+      let ok = b.x >= 0 && b.x + b.w <= COLS;
+      if (ok) for (const o of this.blocks) if (o !== b && solid(o) && overlap(b, o)) { ok = false; break; }
+      if (!ok) { b.x = ox; return false; }
+      b.dx = (b.dx || 0) + amt;
+      return true;
     }
 
     // Special mode: keep the two players within ROPE of each other. Whoever stands on solid
@@ -428,12 +514,12 @@
     }
 
     checkContacts(p) {
-      for (const s of this.spikes) if (s.out > 0.6 && overlap(p, spikeBox(s))) return this.kill(p);
+      for (const s of this.spikes) if (s.out > 0.6 && overlap(p, spikeBox(s))) return this.kill(p, 'spikes');
       for (const s of this.saws) {
         const cx = clamp(s.x, p.x, p.x + p.w), cy = clamp(s.y, p.y, p.y + p.h);
-        if (Math.hypot(s.x - cx, s.y - cy) < s.r * 0.82) return this.kill(p);
+        if (Math.hypot(s.x - cx, s.y - cy) < s.r * 0.82) return this.kill(p, 'saw');
       }
-      if (p.y > ROWS + 1 || p.y < -3) return this.kill(p);
+      if (p.y > ROWS + 1 || p.y < -3) return this.kill(p, 'fell');
       for (const pd of this.pads) {
         if (this.g !== pd.g && overlap(p, padBox(pd))) {
           this.g = pd.g; sfx.flip();
@@ -454,11 +540,12 @@
       }
     }
 
-    kill(p = this.active()[0]) {
+    kill(p = this.active()[0], cause = 'restart') {
       if (this.over || !p) return;
-      this.over = true;
+      this.over = true; this.victim = p; this.cause = cause;
       save.deaths++;
-      save.levelDeaths[this.idx] = (save.levelDeaths[this.idx] || 0) + 1;
+      const dk = dkey(this.mode.id, this.idx);
+      save.levelDeaths[dk] = (save.levelDeaths[dk] || 0) + 1;
       persist();
       // one dies, everyone restarts
       for (const q of this.players) {
@@ -483,7 +570,7 @@
       const p = this.cur;
       burst(p.x + p.w / 2, p.y + p.h / 2, C.portal, 40, 10);
       const prog = save.progress;
-      if (this.idx + 2 > prog[this.mode.id]) { prog[this.mode.id] = Math.min(LEVELS.length, this.idx + 2); persist(); }
+      if (this.idx + 2 > prog[this.mode.id]) { prog[this.mode.id] = Math.min(course(this.mode.id).length, this.idx + 2); persist(); }
       this.wait(1.0, () => game.next());
     }
   }
@@ -493,7 +580,7 @@
     state: 'title', // title | mode | select | play | end
     mode: 'single', modeSel: 0,
     level: null, idx: 0, sel: 0, message: null, time: 0,
-    unlocked() { return Math.min(save.progress[this.mode] || 1, LEVELS.length); },
+    unlocked() { return Math.min(save.progress[this.mode] || 1, course(this.mode).length); },
     clearInput() { pressed[0].clear(); pressed[1].clear(); },
     setMode(id) { this.mode = id; syncCtl(); },
     start(idx) {
@@ -502,7 +589,7 @@
       if (MODE[this.mode].chained) this.level.banner = { text: 'SURPRISE!', sub: "you're chained together. good luck.", t: 0, life: 2.4 };
     },
     restart() { this.level = new Level(this.idx, this.mode); this.clearInput(); },
-    next() { if (this.idx + 1 < LEVELS.length) this.start(this.idx + 1); else { this.state = 'end'; sfx.win(); } },
+    next() { if (this.idx + 1 < course(this.mode).length) this.start(this.idx + 1); else { this.state = 'end'; sfx.win(); } },
   };
 
   function onKey(code) {
@@ -592,8 +679,24 @@
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
+  function drawButton(bt) {
+    const x = bt.x * TILE, y = bt.y * TILE, w = bt.w * TILE, depth = bt.down ? 3 : 7;
+    ctx.fillStyle = C.blockEdge; ctx.fillRect(x - 2, y - 3, w + 4, 3);
+    ctx.save(); ctx.shadowColor = bt.color; ctx.shadowBlur = bt.down ? 14 : 6;
+    ctx.fillStyle = bt.color; ctx.fillRect(x + 3, y - depth, w - 6, depth - 2); ctx.restore();
+  }
+
+  function drawCrate(b) {
+    const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
+    ctx.fillStyle = C.crateDark; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = C.crate; ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+    ctx.strokeStyle = C.crateDark; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x + 4, y + 4); ctx.lineTo(x + w - 4, y + h - 4); ctx.moveTo(x + w - 4, y + 4); ctx.lineTo(x + 4, y + h - 4); ctx.stroke();
+  }
+
   function drawBlock(b, L) {
     if (b.gone) return;
+    if (b.crate) return drawCrate(b);
     let ox = 0, oy = 0;
     if (b.pending) { ox = (Math.random() - 0.5) * 3; oy = (Math.random() - 0.5) * 2; }
     const x = b.x * TILE + ox, y = b.y * TILE + oy, w = b.w * TILE, h = b.h * TILE;
@@ -611,6 +714,10 @@
     ctx.fillStyle = C.blockEdge; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = C.block; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
     ctx.fillStyle = C.blockTop; ctx.fillRect(x + 2, y + 2, w - 4, 3);
+    if (b.link) {
+      ctx.fillStyle = b.link;
+      for (let k = 0; k * 12 < h - 8; k++) ctx.fillRect(x + w / 2 - 3, y + 6 + k * 12, 6, 6);
+    }
     if (b.flash > 0) { ctx.globalAlpha = b.flash / 0.4; ctx.fillStyle = C.portal; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
   }
 
@@ -736,6 +843,7 @@
     for (const s of L.spikes) drawSpike(s);
     for (const b of L.blocks) drawBlock(b, L);
     for (const pd of L.pads) drawPad(pd, t);
+    for (const bt of L.buttons) drawButton(bt);
     for (const s of L.saws) drawSaw(s);
     if (L.chained) drawChain(L);
     for (const p of L.players) drawPlayer(p, L);
@@ -749,8 +857,8 @@
 
     // HUD
     ctx.fillStyle = 'rgba(13,12,29,0.55)'; ctx.fillRect(0, 0, VW, 34);
-    text(`${String(L.idx + 1).padStart(2, '0')} / ${LEVELS.length}  ${L.def.name.toUpperCase()}`, 14, 18, 15, C.text, 'left');
-    const ld = save.levelDeaths[L.idx] || 0;
+    text(`${String(L.idx + 1).padStart(2, '0')} / ${course(L.mode.id).length}  ${L.def.name.toUpperCase()}`, 14, 18, 15, C.text, 'left');
+    const ld = save.levelDeaths[dkey(L.mode.id, L.idx)] || 0;
     text(`deaths here ${ld}   total ${save.deaths}`, VW - 14, 18, 15, C.danger, 'right');
     if (L.mode.players > 1) text(L.mode.label || L.mode.name, VW / 2, 18, 13, C.portal);
 
@@ -797,23 +905,23 @@
     return { x: x0 + (i % SEL.cols) * (SEL.w + SEL.gap), y: SEL.top + Math.floor(i / SEL.cols) * (SEL.h + SEL.gap), w: SEL.w, h: SEL.h };
   }
   function selectHit(x, y) {
-    for (let i = 0; i < LEVELS.length; i++) { const r = selectRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i; }
+    for (let i = 0; i < course(game.mode).length; i++) { const r = selectRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i; }
     return -1;
   }
   function drawSelect(t) {
     drawBg();
     text('PICK YOUR POISON', VW / 2, 80, 40, C.player);
     text(`${MODE[game.mode].name} · ESC back`, VW / 2, 120, 14, C.dim, 'center', 'normal');
-    for (let i = 0; i < LEVELS.length; i++) {
+    for (let i = 0; i < course(game.mode).length; i++) {
       const r = selectRect(i), open = i < game.unlocked(), on = i === game.sel;
       ctx.fillStyle = on ? 'rgba(255,79,139,0.25)' : 'rgba(232,230,240,0.06)';
       roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
       ctx.strokeStyle = on ? C.player : open ? C.blockEdge : 'rgba(232,230,240,0.15)'; ctx.lineWidth = on ? 3 : 1.5; ctx.stroke();
       text(open ? String(i + 1) : '?', r.x + r.w / 2, r.y + 34, 32, open ? C.text : C.dim);
-      const d = save.levelDeaths[i] || 0;
+      const d = save.levelDeaths[dkey(game.mode, i)] || 0;
       text(open ? `☠ ${d}` : 'locked', r.x + r.w / 2, r.y + 70, 13, open ? C.danger : C.dim, 'center', 'normal');
     }
-    const s = LEVELS[game.sel];
+    const s = course(game.mode)[game.sel];
     if (s) text(s.name, VW / 2, VH - 70, 22, C.portal);
   }
 
@@ -860,8 +968,8 @@
       }
       text(m.name, cx, r.y + 175, 22, on ? C.text : C.blockEdge);
       text(m.sub, cx, r.y + 205, 14, C.dim, 'center', 'normal');
-      const lvl = Math.min(save.progress[m.id] || 1, LEVELS.length);
-      text(`level ${lvl} / ${LEVELS.length}`, cx, r.y + 235, 13, C.danger, 'center', 'normal');
+      const lvl = Math.min(save.progress[m.id] || 1, course(m.id).length);
+      text(`level ${lvl} / ${course(m.id).length}`, cx, r.y + 235, 13, C.danger, 'center', 'normal');
     });
     const m = MODES[game.modeSel];
     text(m.hint, VW / 2, MCARD.top + MCARD.h + 45, 15, C.portal, 'center', 'normal');
