@@ -87,7 +87,7 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         if (st.ph === 1) { B.go(1); if (B.x > 21.0) B.jumpOnce('s'); if (B.x > 25.4 && B.g) st.ph = 2; A.to(13.7); return; }
         if (st.ph === 2) { B.to(25.7); A.go(1); if (A.x > 21.0) A.jumpOnce('s'); if (d.tween || d.x < 20) st.ph = 3; return; }
         if (st.ph === 3) { B.to(25.7); A.go(-1); if (A.x < 25.2) A.jumpOnce('back'); if (A.x < 14.2 && A.g) st.ph = 4; return; }
-        if (st.ph === 4) { if (B.p.done) A.to(8.6); else A.to(13.7); B.go(-1); if (B.x < 25.2) B.jumpOnce('back'); return; }
+        if (st.ph === 4) { if (B.p.done) { A.go(-1); if (A.x < 13.4) A.jumpOnce('sp2'); } else A.to(13.7); B.go(-1); if (B.x < 25.2) B.jumpOnce('back'); if (B.x < 12.9 && B.g) B.jumpOnce('sp2'); return; }
       },
       // 2 Boost
       (L, A, B, st) => {
@@ -96,15 +96,15 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         if (st.ph === 1) { B.go(1); B.jumpOnce('up'); if (B.y < 11 && B.g) st.ph = 2; return; }
         if (st.ph === 2) { B.to(18.7); if (btn.down && step.x > 9.9) { A.to(5); if (near(A, 5)) st.ph = 3; } return; }
         if (st.ph === 3) { B.to(18.7); if (A.g && A.y > 13.5) { A.go(1); if (A.x > 7.0) A.jumpOnce('step'); } else if (!A.g && A.y > 11.6) A.right(A.x < 11.5); else if (A.g) { A.go(1); A.jumpOnce('plat'); } else A.go(1); if (A.y < 11 && A.g && A.x > 14.5) st.ph = 4; return; }
-        if (st.ph === 4) { for (const P of [A, B]) { P.go(1); if (P.x > 20.6 && P.g) P.jumpOnce('sp'); if (P.x > 25.6 && P.g) P.jumpOnce('cr'); } return; }
+        if (st.ph === 4) { const d = L.doors[0]; for (const P of [A, B]) { if (d.x < 25 && P.x > 25.5) { P.go(-1); if (P.g) P.jumpOnce('back'); } else { P.go(1); if (P.x > 20.6 && P.g) P.jumpOnce('sp'); if (P.x > 25.6 && P.g) P.jumpOnce('cr'); } } return; }
       },
       // 3 Angry Plate
       (L, A, B, st) => {
         const s = L.buttons[0], e = L.buttons[1], open = L.blocks[2].y < 7.05;
         if (!st.ph) { A.to(5.7); B.to(9.3); if (s.down && open) st.ph = 1; return; }
         if (st.ph === 1) { A.to(5.7); B.go(1); if (B.x > 21) st.ph = 2; return; }
-        if (st.ph === 2) { A.to(9.3); if (near(A, 9.3)) B.to(25.7); else B.to(23.5); if (e.down && open && near(A, 9.3)) st.ph = 3; return; }
-        if (st.ph === 3) { B.to(25.7); A.go(1); if (A.x > 21) st.ph = 4; return; }
+        if (st.ph === 2) { B.to(23.5); if (!st.off) { if (A.to(9.3)) st.off = 1; return; } if (open) st.ph = 3; return; }
+        if (st.ph === 3) { B.to(23.5); A.go(1); if (A.x > 21) st.ph = 4; return; }
         if (st.ph === 4) { A.go(1); B.go(1); return; }
       },
       // 4 Two Keys
@@ -132,25 +132,25 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
       (L, A, B, st) => {
         const g1open = L.blocks[3].y < 0.05, g2open = L.blocks[4].y < 1.05;
         if (!st.ph) { B.to(9.7); if (g1open) { A.to(17.7); if (near(A, 17.7) && g2open) st.ph = 1; } else A.to(12.5); return; }
-        if (st.ph === 1) { A.to(17.7); B.go(1); if (B.x > 22.4) B.jumpOnce('sp'); return void (B.p.done && (st.ph = 2)); }
+        if (st.ph === 1) { A.to(17.7); B.go(1); if (B.x > 11.7 && B.g) B.jumpOnce('mid'); if (B.x > 22.4) B.jumpOnce('sp'); return void (B.p.done && (st.ph = 2)); }
         if (st.ph === 2) { if (!st.off) { if (A.to(15.5)) st.off = 1; return; } if (L.blocks[4].y > 7.95) { A.go(1); if (A.x > 15.9) A.jumpOnce('hop'); if (A.x > 21.5 && A.g) A.jumpOnce('sp'); } return; }
       },
       // 7 Weight Limit
       (L, A, B, st) => {
-        if (!st.ph) { A.to(7.5); B.go(1); if (B.x > 23.6) st.ph = 1; return; }
-        A.go(1); B.go(1);
+        if (!st.ph) { A.to(7.5); B.go(1); if (L.saws[0].vx > 0) st.ph = 1; return; }
+        A.go(1); B.go(1); for (const P of [A, B]) if (P.g && P.x > 14.2 && P.x < 15) P.jumpOnce('hop', 6);
       },
       // 8 Swap Meet
       (L, A, B, st) => {
-        for (const P of [A, B]) { P.go(1); for (const [x, n] of [[10.3, 'a'], [17.3, 'b'], [22.5, 'c'], [27.4, 'd']]) if (P.x > x && P.g) P.jumpOnce(n); }
+        for (const P of [A, B]) { P.go(1); for (const [x, n] of [[10.3, 'a'], [17.3, 'b'], [22.5, 'c']]) if (P.x > x && P.g) P.jumpOnce(n); if (P.x > 26.4 && P.g && L.spikes[1].target === 1) P.jumpOnce('d'); }
       },
       // 9 Crate Expectations
       (L, A, B, st) => {
-        const crate = L.blocks.find((b) => b.crate), btn = L.buttons[0], cageOpen = L.blocks[L.blocks.length - 1].y < 5;
+        const crate = L.blocks.find((b) => b.crate && !b.mimic), mim = L.blocks.find((b) => b.mimic), btn = L.buttons[0], cageOpen = L.blocks[L.blocks.length - 1].y < 5;
         if (!st.ph) { A.to(8.45); if (near(A, 8.45) && A.g) { B.go(-1); if (B.x < 10.6) B.jumpOnce('head'); if (B.p.onP) st.ph = 1; } else B.to(10.6); return; }
         if (st.ph === 1) { B.go(-1); B.jumpOnce('up'); if (B.y < 11 && B.g) st.ph = 2; return; }
-        if (st.ph === 2) { A.to(13); if (!st.back) { if (B.g && B.x < crate.x + 2.2 && B.x > crate.x) B.jumpOnce('over'); B.to(2.5); if (near(B, 2.5)) st.back = 1; } else if (crate.y < 11.5) B.go(1); else B.to(6.5); if (crate.y > 13.5 && btn.down) st.ph = 3; return; }
-        if (st.ph === 3) { for (const P of [A, B]) { if (P.g && P.x > crate.x - 1.3 && P.x < crate.x) P.jumpOnce('crate'); if (P.y > 13.5 && P.x > 18.3 && P.x < 19.5 && P.g) P.jumpOnce('sp'); if (cageOpen || P.x < 19) P.to(26.25); else P.to(23); } return; }
+        if (st.ph === 2) { A.to(13); if (!mim.gone) { if (!mim.armed) { if (B.to(7.6)) st.tap = 1; if (st.tap) B.go(-1); } else B.to(7.7); return; } if (!st.back) { if (B.g && B.x < crate.x + 2.2 && B.x > crate.x) B.jumpOnce('over'); B.to(1.5); if (near(B, 1.5) && B.y > 10) st.back = 1; } else if (crate.y < 11.5) B.go(1); else B.to(6.5); if (crate.y > 13.5 && btn.down) st.ph = 3; return; }
+        if (st.ph === 3) { if (B.x < 17) { A.to(17.5); if (B.g && B.x > crate.x - 1.3 && B.x < crate.x) B.jumpOnce('crate'); B.go(1); return; } for (const P of [A, B]) { if (P.g && P.x > crate.x - 1.3 && P.x < crate.x) P.jumpOnce('crate'); if (P.y > 13.5 && P.x > 18.3 && P.x < 19.5 && P.g) P.jumpOnce('sp'); if (cageOpen || P.x < 19) P.to(26.25); else P.to(23); } return; }
       },
       // 10 Trust Issues
       (L, A, B, st) => {
@@ -160,7 +160,7 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         if (st.ph === 1) { A.to(6.7); if (lift.y < 6.1 && !st.j && B.to(16.6)) B.jumpOnce('sp'); if (st.j || B.p.vy < 0) { st.j = 1; B.go(1); } if (B.x > 21 && B.g && B.y < 7) st.ph = 2; return; }
         if (st.ph === 2) { B.to(26.5); if (lift.y <= 14.3 && !st.r) A.to(10); if (lift.y > 14.3 || st.r) { st.r = 1; ride(A, 'on'); if (A.g && A.y < 14.3 && Math.abs(A.p.y + A.p.h - lift.y) < 0.05) st.ph = 3; } return; }
         if (st.ph === 3) { B.to(24.7); if (lift.y < 6.1 && !st.k && A.to(16.6)) A.jumpOnce('sp'); if (st.k || A.p.vy < 0) { st.k = 1; A.go(1); } if (A.x > 21 && A.g && A.y < 7) st.ph = 4; return; }
-        if (st.ph === 4) { A.to(29.6); B.to(29.6); }
+        if (st.ph === 4) { const d = L.doors[0]; for (const P of [A, B]) { if (d.y > 10 || d.tween) { if (P.y < 7) { P.go(-1); if (P.g && P.x < 22.6) P.jumpOnce('back'); } else P.to(25.6); } else P.to(29.6); } }
       },
     ];
 
@@ -170,7 +170,10 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
       // 1 Tethered
       (L, A, B, st) => {
         if (!st.ph) { A.to(9); B.to(9); if (near(A, 9) && near(B, 9)) st.ph = 1; return; }
-        pair(A, B, (P) => { P.go(1); if (P.x > 13.4) P.jumpOnce('pit'); if (P.x > 21.4) P.jumpOnce('sp'); });
+        pair(A, B, (P) => { P.go(1); if (P.x > 13.4) P.jumpOnce('pit'); });
+        // past the pit: line up one tile apart, then both jump together, twice
+        if (A.x > 18.3 && !st.al) { const a = A.to(18.6), b = B.to(19.6); if (a && b && A.g && B.g && A.p.ground && B.p.ground) st.al = 1; return; }
+        if (st.al) { if (B.x > 21.2 && A.g && B.g) { A.jumpOnce('sp'); B.jumpOnce('sp'); } if (B.x > 25.4 && A.g && B.g) { A.jumpOnce('sp2'); B.jumpOnce('sp2'); } if (B.x > 30.5 && B.g) { A.go(-1); B.go(-1); } }
       },
       // 2 Haul
       (L, A, B, st) => {
@@ -182,10 +185,11 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
       // 3 Counterweight
       (L, A, B, st) => {
         const btn = L.buttons[0], open = L.blocks.find((b) => b.link && b.x === 21).y < -2.9;
-        const crate = L.blocks.find((b) => b.crate);
+        const crate = L.blocks.find((b) => b.crate && !b.mimic), mim = L.blocks.find((b) => b.mimic);
+        if (!mim.gone) { A.to(1.4); if (!mim.armed) { if (B.to(3.4)) st.tap = 1; if (st.tap) B.go(1); } else B.to(2.6); return; }
         if (!st.ph) { A.to(4); if (crate.x < 10.05) B.go(1); else B.to(8.5); if (btn.down) st.ph = 1; return; }
         if (st.ph === 1) { A.to(8.5); B.to(8.5); if (near(A, 8.5) && near(B, 8.5) && open) st.ph = 2; return; }
-        pair(A, B, (P) => { P.go(1); if (P.x > 9.4) P.jumpOnce('pit'); });
+        pair(A, B, (P) => { P.go(1); if (P.x > 9.4) P.jumpOnce('pit'); if (P.x > 24.4 && P.g) P.jumpOnce('sp'); });
       },
       // 4 Lift Together
       (L, A, B, st) => {
@@ -196,7 +200,10 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
       },
       // 5 Leash
       (L, A, B, st) => {
-        pair(A, B, (P) => { P.go(P.x > 30.9 ? -1 : 1); for (const [x, n] of [[8.3, 'a'], [15.3, 'b'], [21.9, 'c'], [26.7, 'd']]) if (P.x > x && P.g) P.jumpOnce(n); });
+        if (!st.al) { A.to(3.2); B.to(3.2); if (near(A, 3.2) && near(B, 3.2)) st.al = 1; return; }
+        pair(A, B, (P) => P.go(P.x > 30.9 ? -1 : 1));
+        const lead = Math.max(A.x, B.x);
+        for (const [x, n] of [[8.3, 'a'], [15.3, 'b'], [21.3, 'c'], [26.7, 'd']]) if (lead > x && A.g && B.g) { A.jumpOnce(n); B.jumpOnce(n); }
       },
       // 6 Weight Limit
       (L, A, B, st) => {
@@ -207,19 +214,24 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
       },
       // 7 Up Is Down (Together)
       (L, A, B, st) => {
+        if (st.al === 2) { A.go(1); B.go(1); return; }
+        if (L.g < 0 && A.x > 17 && B.x > 17 && !st.al) { const a = A.to(17.6), b = B.to(18.6); if (a && b && A.p.ground && B.p.ground) { st.al = 2; A.jumpOnce('sp'); B.jumpOnce('sp'); } return; }
         pair(A, B, (P) => { P.go(1); if (L.g < 0 && P.g && P.x > 13.3) P.jumpOnce('hole'); });
       },
       // 8 Lift Off
       (L, A, B, st) => {
         const pillar = L.blocks.find((b) => b.x === 15 && b.h === 0.6);
-        if (!st.ph) { A.to(8.7); B.to(8.7); if (L.buttons[0].down && near(A, 8.7, 0.5) && near(B, 8.7, 0.5)) st.ph = 1; return; }
+        const lie = L.spikes.find((x) => x.y === 14.4);
+        if (!st.ph) { A.to(8.7); B.to(8.7); if (lie.target === 1) st.ph = 0.5; return; }
+        if (st.ph === 0.5) { A.to(6); B.to(6); if (lie.target === 0 && lie.out < 0.05 && near(A, 6, 0.4) && near(B, 6, 0.4)) st.ph = 0.7; return; }
+        if (st.ph === 0.7) { A.to(8.7); B.to(8.7); if (L.buttons[0].down && near(A, 8.7, 0.5) && near(B, 8.7, 0.5)) st.ph = 1; return; }
         if (st.ph === 1) { pair(A, B, (P) => { if (P.x < 15.6) { P.go(1); if (P.x > 13.6) P.jumpOnce('on'); } else P.go(0); }); if (pillar.y < 6.01) st.ph = 2; return; }
         pair(A, B, (P) => { P.go(1); if (P.x > 19.8 && P.g) P.jumpOnce('sp'); });
       },
       // 9 Crumble Run
       (L, A, B, st) => {
         if (!st.ph) { A.to(4); B.to(4); if (near(A, 4) && near(B, 4)) st.ph = 1; return; }
-        pair(A, B, (P) => { P.go(1); if (P.x > 25.5) P.jumpOnce('sp'); });
+        pair(A, B, (P) => { P.go(1); if (P.x > 16.4) P.jumpOnce('m'); if (P.x > 25.5) P.jumpOnce('sp'); });
       },
       // 10 The End (Together): reveal the hidden steps, then climb them side by side
       (L, A, B, st) => {
@@ -230,7 +242,8 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         pair(A, B, (P) => {
           if (P.y > 13) { P.right(P.x < 9.6); if (P.x > 6.5) P.jumpOnce('s1'); }
           else if (P.y > 10) { P.right(P.x < 13.6); if (P.g && P.x > 10.2) P.jumpOnce('s2'); }
-          else { P.go(1); if (P.g && P.y < 9 && P.x > 14.2) P.jumpOnce('s3'); }
+          else if (P.y > 7) { P.go(1); if (P.g && P.y < 9 && P.x > 14.2) P.jumpOnce('s3'); }
+          else P.go(L.doors[0].x < 20 ? -1 : 1);
         });
       },
     ];
