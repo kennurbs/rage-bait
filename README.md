@@ -1,4 +1,4 @@
-# Rage Bait
+# MASTER BAITER
 
 A minimalist troll platformer for the browser, in the spirit of the "rage game" genre.
 The goal is always the same: reach the glowing portal. The level does not want you to.
