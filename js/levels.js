@@ -893,7 +893,7 @@ const MULTI = [
       L.block(26, 15, 6, 3);
       // controls swap every few seconds
       let swapTimer = 0;
-      L.on(() => { swapTimer += 1 / 120; if (swapTimer > 2.8 && L.px > 5) { swapTimer = 0; L.swap = !L.swap; L.say(L.swap ? 'swapped!' : 'back!'); } return false; }, () => {}, { repeat: true });
+      L.on(() => { swapTimer += 1 / 120; if (swapTimer > 2.8 && L.px > 5) { swapTimer = 0; L.swap = !L.swap; L.say(L.swap ? 'swapped!' : 'back!'); } return false; }, () => { }, { repeat: true });
       const s1 = L.spike(10, 15, 1, 'up', { hidden: true });
       const s2 = L.spike(18, 15, 1, 'up', { hidden: true });
       const s3 = L.spike(26, 15, 1, 'up', { hidden: true });
@@ -1161,10 +1161,222 @@ const SPECIAL = [
       L.block(9, 12, 2, 1, { hidden: true });
       L.block(13, 9, 2, 1, { hidden: true });
       L.on(() => L.near(d, 2.2), () => { L.moveDoor(d, 13.4, 9, 25); L.say('nope'); });
+    },
+  },
+  // ---------------------------------------------------------------- levels 11-20 (special/chained, harder)
+  {
+    name: 'Short Leash',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 6, 'Rope shrinks as you move. Don\'t straggle.');
+      L.block(0, 15, 8, 3);
+      L.block(10, 15, 6, 3);
+      L.block(18, 15, 6, 3);
+      L.block(26, 15, 6, 3);
+      L.on(() => L.px > 8, () => L.setRope(3.2));
+      L.on(() => L.px > 16, () => L.setRope(2.2));
+      L.on(() => L.px > 24, () => L.setRope(1.6));
+      const s1 = L.spike(10, 15, 1, 'up', { hidden: true });
+      const s2 = L.spike(18, 15, 1, 'up', { hidden: true });
+      const s3 = L.spike(26, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 8.5, () => s1.pop());
+      L.on(() => L.px > 16.5, () => s2.pop());
+      L.on(() => L.px > 24.5, () => s3.pop());
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'Tandem Vault',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 6, 'One stands below, one launches up.');
+      L.block(0, 15, 10, 3);
+      L.block(10, 11, 4, 7);
+      L.block(16, 7, 4, 11);
+      L.block(22, 15, 10, 3);
+      // whenever climber jumps, yanks lower partner
+      L.onJump((p) => {
+        const o = L.players.find((q) => q !== p);
+        if (p.y < o.y - 3) { L.yank(o, 0, -11 * L.g); L.say('pull!'); }
+      });
+      const s1 = L.spike(10, 11, 1, 'up', { hidden: true });
+      const s2 = L.spike(16, 7, 1, 'up', { hidden: true });
+      L.on(() => L.py < 11 && L.px > 8.5, () => s1.pop());
+      L.on(() => L.py < 7 && L.px > 14.5, () => s2.pop());
+      const saw = L.saw(-2, 14.2, 0.8);
+      L.on(() => L.px > 5, () => { saw.vx = 6; });
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Inverse Tether',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 6, 'Flipping gravity pulls both to opposite fates.');
+      L.block(0, 0, 12, 3);
+      L.block(0, 15, 12, 3);
+      L.pad(6, 15, 2, -1);
+      L.block(14, 0, 8, 3);
+      L.block(14, 15, 8, 3);
+      L.pad(17, 3, 2, 1);
+      L.block(24, 0, 8, 3);
+      L.block(24, 15, 8, 3);
+      L.on(() => L.px > 12, () => L.setRope(2.4));
+      const s1 = L.spike(14, 3, 3, 'down', { hidden: true });
+      const s2 = L.spike(14, 15, 3, 'up', { hidden: true });
+      L.on(() => L.px > 12.5, () => { s1.pop(); s2.pop(); });
+      const s3 = L.spike(26, 15, 2, 'up', { hidden: true });
+      L.on(() => L.px > 24.5, () => s3.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Guillotine Run',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 6, 'Heavy crushers overhead. One slow step crushes both.');
+      L.block(0, 15, 32, 3);
+      const c1 = L.block(9, 0, 3, 8);
+      const c2 = L.block(17, 0, 3, 8);
+      const c3 = L.block(25, 0, 3, 8);
+      L.on(() => L.px > 7, () => L.drop(c1, 0.12, { land: true }));
+      L.on(() => L.px > 15, () => L.drop(c2, 0.12, { land: true }));
+      L.on(() => L.px > 23, () => L.drop(c3, 0.12, { land: true }));
+      const s1 = L.spike(12, 15, 1, 'up', { hidden: true });
+      const s2 = L.spike(20, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 10.5, () => s1.pop());
+      L.on(() => L.px > 18.5, () => s2.pop());
+      L.door(29.5, 15);
+    },
+  },
+  {
+    name: 'Slipknot',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 6, 'Controls swap mid-air. Don\'t yank each other into the pit.');
+      L.block(0, 15, 8, 3);
+      L.block(11, 15, 5, 3);
+      L.block(19, 15, 5, 3);
+      L.block(26, 15, 6, 3);
+      L.on(() => L.px > 7, () => { L.swap = true; L.say('controls swapped!'); });
+      L.on(() => L.px > 18, () => { L.swap = false; L.say('swapped back!'); });
+      L.on(() => L.px > 25, () => { L.swap = true; L.say('swapped again!'); });
+      const s1 = L.spike(11, 15, 1, 'up', { hidden: true });
+      const s2 = L.spike(19, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 9.5, () => s1.pop());
+      L.on(() => L.px > 17.5, () => s2.pop());
+      const saw = L.saw(-2, 14.2, 0.8);
+      L.on(() => L.px > 5, () => { saw.vx = 7; });
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'Fragile Unity',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 6, 'Crumbling floor and a tightening chain.');
+      L.block(0, 15, 5, 3);
+      for (let x = 5; x < 25; x++) L.block(x, 15, 1, 1, { crumble: 0.1 });
+      L.block(25, 15, 7, 3);
+      L.on(() => L.px > 8, () => L.setRope(2.0));
+      L.on(() => L.px > 15, () => { L.swapPlaces(); L.say('swapped!'); });
+      const s = L.spike(18, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 16.5, () => s.pop());
+      const s2 = L.spike(28, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 26.5, () => s2.pop());
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'Twin Hazards',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 5, 'Saws coming from both sides. Jump in rhythm.');
+      L.block(0, 15, 32, 3);
+      const sawL = L.saw(-2, 14.2, 0.8);
+      const sawR = L.saw(34, 14.2, 0.8);
+      L.on(() => L.px > 5, () => { sawL.vx = 6.5; });
+      L.on(() => L.px > 12, () => { sawR.vx = -6.5; });
+      // rope tightens when dodging
+      L.on(() => L.px > 14, () => L.setRope(2.2));
+      const s1 = L.spike(15, 15, 2, 'up', { hidden: true });
+      const s2 = L.spike(24, 15, 2, 'up', { hidden: true });
+      L.on(() => L.px > 13.5, () => s1.pop());
+      L.on(() => L.px > 22.5, () => s2.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'The Chasm Swing',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 5, 'Anchor on the ledge. Swing partner across the pit.');
+      L.block(0, 15, 8, 3);
+      L.block(8, 17, 14, 1);
+      L.spike(8, 17, 14, 'up');
+      L.block(22, 15, 10, 3);
+      // overhead anchor block
+      L.block(13, 8, 4, 1);
+      L.on(() => L.px > 7, () => L.setRope(5.5));
+      L.on(() => L.all((p) => p.x > 22 && p.grounded), () => L.setRope(2.5));
+      const s = L.spike(26, 15, 2, 'up', { hidden: true });
+      L.on(() => L.px > 24.5, () => s.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Chaos Bond',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 5, 'Mirrored view, lag, and chained. Total harmony.');
+      L.jumpDelay = 0.16;
+      L.block(0, 15, 9, 3);
+      L.block(12, 15, 6, 3);
+      L.block(21, 15, 11, 3);
+      L.on(() => L.px > 6, () => { L.mirror(); L.say('mirrored!'); });
+      L.on(() => L.px > 14, () => { L.mirror(false); L.say('back!'); });
+      L.on(() => L.px > 23, () => { L.jumpDelay = 0; L.say('lag cleared!'); });
+      const s1 = L.spike(12, 15, 1, 'up', { hidden: true });
+      const s2 = L.spike(21, 15, 1, 'up', { hidden: true });
+      const s3 = L.spike(27, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 10.5, () => s1.pop());
+      L.on(() => L.px > 19.5, () => s2.pop());
+      L.on(() => L.px > 25.5, () => s3.pop());
+      L.door(30, 15);
+    },
+  },
+  {
+    name: 'Eternal Bond',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(2, 5, 'The ultimate chained test. Every trap combined.');
+      L.block(0, 15, 6, 3);
+      // crumble section with shortening rope
+      for (let x = 6; x < 14; x++) L.block(x, 15, 1, 1, { crumble: 0.1 });
+      L.block(14, 15, 4, 3);
+      // overhead crusher
+      const c = L.block(14, 0, 4, 8);
+      L.on(() => L.px > 12, () => L.drop(c, 0.08, { land: true }));
+      // gravity pad section
+      L.block(18, 15, 6, 3);
+      L.block(18, 0, 6, 3);
+      L.pad(19, 15, 2, -1);
+      L.pad(21, 3, 2, 1);
+      L.block(24, 15, 8, 3);
+      // saw chase
+      const saw = L.saw(-2, 14.2, 0.85);
+      L.on(() => L.px > 5, () => { saw.vx = 7.5; });
+      L.on(() => L.px > 10, () => L.setRope(2.0));
+      // fake door and real door trick
       const fake = L.door(28, 15, { fake: true });
+      L.block(25, 11, 2, 1, { hidden: true });
+      L.door(25, 11);
       L.on(() => L.touch(fake), () => {
         L.fakeWin();
-        L.wait(1.1, () => { L.drop(trap, 0); L.flipView(); L.banner = { text: 'JK', sub: 'not even together', t: 0, life: 1.5 }; });
+        L.wait(1.1, () => {
+          L.flipView();
+          L.banner = { text: 'JK', sub: 'exit is above on the ledge', t: 0, life: 2 };
+        });
       });
     },
   },

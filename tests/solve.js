@@ -395,6 +395,94 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
           else P.go(L.doors[0].x < 20 ? -1 : 1);
         });
       },
+      // 11 Short Leash: run together, jump pits
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 8.2 && P.g) P.jumpOnce('p1');
+          if (P.x > 16.2 && P.g) P.jumpOnce('p2');
+          if (P.x > 24.2 && P.g) P.jumpOnce('p3');
+        });
+      },
+      // 12 Tandem Vault: leap ledges together
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 8.5 && P.g) P.jumpOnce('l1');
+          if (P.x > 14.5 && P.g) P.jumpOnce('l2');
+          if (P.x > 20.5 && P.g) P.jumpOnce('l3');
+        });
+      },
+      // 13 Inverse Tether: pads flip gravity
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 12.3 && P.g) P.jumpOnce('sp');
+          if (P.x > 24.3 && P.g) P.jumpOnce('sp2');
+        });
+      },
+      // 14 Guillotine Run: dodge crushers
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 10.3 && P.g) P.jumpOnce('sp1');
+          if (P.x > 18.3 && P.g) P.jumpOnce('sp2');
+        });
+      },
+      // 15 Slipknot: handle swaps while jumping pits
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 7.5 && P.g) P.jumpOnce('p1');
+          if (P.x > 15.5 && P.g) P.jumpOnce('p2');
+          if (P.x > 23.5 && P.g) P.jumpOnce('p3');
+        });
+      },
+      // 16 Fragile Unity: sprint across crumble
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 16.2 && P.g) P.jumpOnce('m');
+          if (P.x > 26.2 && P.g) P.jumpOnce('sp');
+        });
+      },
+      // 17 Twin Hazards: time jumps over saws and spikes
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 13.2 && P.g) P.jumpOnce('s1');
+          if (P.x > 22.2 && P.g) P.jumpOnce('s2');
+        });
+      },
+      // 18 The Chasm Swing: cross the pit
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 6.8 && P.g) P.jumpOnce('swing');
+          if (P.x > 24.2 && P.g) P.jumpOnce('sp');
+        });
+      },
+      // 19 Chaos Bond: navigate mirror and spikes
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          P.go(1);
+          if (P.x > 10.2 && P.g) P.jumpOnce('s1');
+          if (P.x > 19.2 && P.g) P.jumpOnce('s2');
+          if (P.x > 25.2 && P.g) P.jumpOnce('s3');
+        });
+      },
+      // 20 Eternal Bond: combo obstacles to upper ledge
+      (L, A, B, st) => {
+        pair(A, B, (P) => {
+          if (P.y > 13) {
+            P.go(1);
+            if (P.x > 12.2 && P.g) P.jumpOnce('p1');
+            if (P.x > 23.2 && P.g) P.jumpOnce('p2');
+          } else {
+            P.go(1);
+          }
+        });
+      },
     ];
 
     const out = [];

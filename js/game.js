@@ -26,12 +26,18 @@
   const STRIKES = 3; // deaths in one level (2-player modes) before you get sent back
   const ROPE = 4.2; // chain length in tiles (special mode)
   const MODES = [
-    { id: 'single', name: 'SINGLE PLAYER', sub: 'just you vs. the level', players: 1,
-      hint: '←/→ or A/D move · SPACE / ↑ / W jump' },
-    { id: 'multi', name: 'MULTIPLAYER', sub: '2 players · one keyboard', players: 2,
-      hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump' },
-    { id: 'special', name: 'SPECIAL', sub: '2 players · trust us', players: 2, chained: true,
-      label: 'SPECIAL (CHAINED)', hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump' },
+    {
+      id: 'single', name: 'SINGLE PLAYER', sub: 'just you vs. the level', players: 1,
+      hint: '←/→ or A/D move · SPACE / ↑ / W jump'
+    },
+    {
+      id: 'multi', name: 'MULTIPLAYER', sub: '2 players · one keyboard', players: 2,
+      hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump'
+    },
+    {
+      id: 'special', name: 'SPECIAL', sub: '2 players · trust us', players: 2, chained: true,
+      label: 'SPECIAL (CHAINED)', hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump'
+    },
   ];
   const MODE = Object.fromEntries(MODES.map((m) => [m.id, m]));
   const course = (mode) => LEVELS[mode];
@@ -251,15 +257,19 @@
     flipView(on = true) { this.view.flip = on; if (on) this.say('which way is up?'); sfx.flip(); }
     moveBlock(b, x, y, speed = 8) { b.goal = { x, y, speed }; }
     block(x, y, w, h, o = {}) {
-      const b = { kind: 'block', x, y, w, h, vy: 0, dx: 0, dy: 0, solid: true, hidden: false, crumble: 0,
-        pending: false, falling: false, shakeT: 0, land: false, gone: false, flash: 0, sparkle: Math.random() * 3, ...o };
+      const b = {
+        kind: 'block', x, y, w, h, vy: 0, dx: 0, dy: 0, solid: true, hidden: false, crumble: 0,
+        pending: false, falling: false, shakeT: 0, land: false, gone: false, flash: 0, sparkle: Math.random() * 3, ...o
+      };
       this.blocks.push(b); return b;
     }
     spike(x, y, w, dir = 'up', o = {}) {
       const L = this;
-      const s = { kind: 'spike', x, y, w, dir, out: o.hidden ? 0 : 1, target: o.hidden ? 0 : 1,
+      const s = {
+        kind: 'spike', x, y, w, dir, out: o.hidden ? 0 : 1, target: o.hidden ? 0 : 1,
         pop() { if (s.target !== 1) { s.target = 1; sfx.pop(); L.shake(0.08, 0.08); } },
-        hide() { s.target = 0; } };
+        hide() { s.target = 0; }
+      };
       this.spikes.push(s); return s;
     }
     door(x, floorY, o = {}) {
