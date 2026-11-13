@@ -442,55 +442,40 @@ const SINGLE = [
     build(L) {
       L.spawn(2, 15);
       L.text(3, 5, 'Everything. All at once. Final level.');
-      // 1. Initial floor & gravity flip up
       L.block(0, 15, 6, 3);
-      L.block(6, 17, 3, 1);
-      L.spike(6, 17, 3, 'up');
+      // gravity flip zone
+      L.block(0, 0, 8, 3);
       L.pad(4, 15, 2, -1);
-
-      // Ceiling guide & gravity return pad
-      L.block(3, 0, 9, 3);
-      L.pad(8.5, 3, 2, 1);
-
-      // Safe landing island below the return pad
-      L.block(9, 15, 4, 3);
-
-      // 2. Crumble run with inverted controls
-      for (let x = 13; x < 21; x++) L.block(x, 15, 1, 1, { crumble: 0.16 });
-      L.block(13, 17, 8, 1);
-      L.spike(13, 17, 8, 'up');
-      L.on(() => L.px > 14, () => { L.invert = true; L.say('inverted!'); });
-      L.on(() => L.px > 21.5, () => { L.invert = false; L.say('normal again'); });
-
-      // 3. Overhead crusher with fair telegraph
-      const crush = L.block(18, 0, 3, 3);
-      L.on(() => L.px > 16, () => L.drop(crush, 0.4, { land: true }));
-
-      // 4. Final stretch with lag, chaser saw, and the hidden exit
-      L.block(21, 15, 6, 3);
-      const trap = L.block(27, 15, 5, 3);
-      L.on(() => L.px > 22, () => { L.jumpDelay = 0.15; L.say('lag!'); });
-      L.on(() => L.px > 26, () => { L.jumpDelay = 0; });
-
-      // Pursuing saw to keep forward momentum
-      const saw = L.saw(-2, 14.2, 0.75);
-      L.on(() => L.px > 8, () => { saw.vx = 5.5; });
-
-      // Hidden stairway to the real portal above
+      L.block(6, 0, 4, 3);
+      L.pad(8, 3, 2, 1);
+      // crumble section
+      for (let x = 10; x < 18; x++) L.block(x, 15, 1, 1, { crumble: 0.1 });
+      L.block(18, 15, 4, 3);
+      // inverted controls
+      L.on(() => L.px > 14, () => { L.invert = true; L.say('and inverted'); });
+      L.on(() => L.px > 22, () => { L.invert = false; L.say('you\'re welcome'); });
+      // crusher at the gap
+      const crush = L.block(19, 0, 4, 10);
+      L.on(() => L.px > 17, () => L.drop(crush, 0.05, { land: true }));
+      // lag for the final stretch
+      L.block(22, 15, 10, 3);
+      L.on(() => L.px > 22, () => { L.jumpDelay = 0.2; L.say('lag!'); });
+      // dual saws (saw sandwich)
+      const saw1 = L.saw(-2, 14.2, 0.75);
+      const saw2 = L.saw(34, 14.2, 0.75);
+      L.on(() => L.px > 8, () => { saw1.vx = 7; });
+      L.on(() => L.px > 20, () => { saw2.vx = -7; });
+      // fake door then real one on climbable hidden staircase
+      const fake = L.door(28, 15, { fake: true });
       L.block(21, 13, 2, 1, { hidden: true });
       L.block(24, 10.5, 2, 1, { hidden: true });
       L.block(27, 8, 4, 1);
-      L.door(28.5, 8); // Real exit
-
-      // Fake door on the ground that drops the trap floor
-      const fake = L.door(29, 15, { fake: true });
+      L.door(28.5, 8);
       L.on(() => L.touch(fake), () => {
         L.fakeWin();
-        L.wait(1.1, () => {
-          L.drop(trap, 0);
-          L.banner = { text: 'JK', sub: 'exit is above on the ledge!', t: 0, life: 2 };
-        });
+        L.wait(1.1, () => { L.banner = { text: 'JK', sub: 'check above you', t: 0, life: 2 }; });
       });
+      L.on(() => L.px > 25, () => { L.jumpDelay = 0; });
     },
   },
 ];
