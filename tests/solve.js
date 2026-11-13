@@ -109,13 +109,33 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         k.right = 1;
         return J(st, 'a', L.px > 14.5 && L.player.grounded) || J(st, 'b', L.px > 27.5 && L.player.grounded);
       },
-      // 17 The Betrayal: avoid evil flag, jump to hidden platform
+      // 17 The Betrayal: avoid evil flag, jump over spike2, then climb hidden platforms
       (L, k, st) => {
         const p = L.player;
-        if (!st.s) { k.right = 1; if (L.px > 24.5 && p.grounded) st.s = 1; return J(st, 'a', L.px > 3.5 && p.grounded); }
-        // jump to hidden platform at y=12 x=25
-        k.left = 0; k.right = 0;
-        if (!st.s2) { if (p.grounded && p.y > 14) { k.right = 1; return J(st, 'b', p.grounded && L.px > 25.1); } if (p.y < 13) st.s2 = 1; return false; }
+        // phase 0: run right; jump at x=3.5 to clear s1 (x=5–8), jump at x=21 to clear s2 (x=22–26)
+        if (!st.s) {
+          k.right = 1;
+          if (L.px > 24.5 && p.grounded) { st.s = 1; return false; }
+          return J(st, 'a', L.px > 3.5 && p.grounded) || J(st, 'b', L.px > 21 && p.grounded);
+        }
+        // phase 1: arrived past spike zone on floor (~x=26). Walk back left to x≈22, jump to y=13.5 platform
+        if (!st.s2) {
+          k.right = 0; k.left = 0;
+          if (p.grounded && p.y > 14) {
+            if (L.px > 22.5) { k.left = 1; return false; }   // walk back toward x=22
+            return J(st, 'c', L.px > 21.5 && p.grounded);    // jump to y=13.5 block (x=21–23)
+          }
+          if (p.y < 14) st.s2 = 1;   // landed on elevated platform
+          return false;
+        }
+        // phase 2: on y=13.5 platform, walk right and jump to y=12 platform (x=25–27)
+        if (!st.s3) {
+          k.right = 1;
+          if (J(st, 'd', L.px > 22.5 && p.grounded && p.y < 14)) return true;
+          if (p.grounded && p.y < 13) st.s3 = 1;
+          return false;
+        }
+        // phase 3: on y=12 platform, walk right into real door at x=25
         k.right = 1; return false;
       },
       // 18 Crusher Gauntlet: dash through each corridor, stay away from landing zones
@@ -130,21 +150,41 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         return J(st, 'a', L.px > 8.6 && L.player.grounded) || J(st, 'b', L.px > 16.6 && L.player.grounded) ||
                J(st, 'c', L.px > 24.6 && L.player.grounded);
       },
-      // 20 The Reckoning: gravity, crumble, invert, crusher, lag, hidden platform
+      // 20 The Reckoning: gravity, crumble, invert, crusher, lag, then climb 3-step hidden staircase
+      // Staircase: floor(y=15) → y=13.5 (x=22.5–25.5) → y=11.5 (x=25–28.5) → y=9.5 (x=28–32) → door(29.5,9.5)
       (L, k, st) => {
         const p = L.player;
         if (L.invert) { k.left = 1; k.right = 0; } else { k.right = 1; k.left = 0; }
+        // phase 0: gravity flip zone (pads at x=4–6 and x=8–10), then crumble+invert stretch
         if (!st.s) {
-          if (J(st, 'a', L.px > 3.5 && p.grounded && L.g > 0)) return true;
-          if (J(st, 'b', L.px > 7.5 && p.grounded)) return true;
+          if (J(st, 'a', L.px > 3.5 && p.grounded && L.g > 0)) return true;  // jump before gravity pad
+          if (J(st, 'b', L.px > 7.5 && p.grounded)) return true;              // jump to restore gravity
           if (p.grounded && L.px > 10 && L.px < 18) st.s = 1;
           return false;
         }
+        // phase 1: past the crusher island (x=18–22). Walk right onto final platform.
         if (!st.s2 && p.grounded && L.px > 22) st.s2 = 1;
-        if (st.s2) {
-          if (J(st, 'c', L.px > 24 && p.grounded)) return true;
+        if (!st.s2) return false;
+        // phase 2: climb step 1 — jump from floor to y=13.5 platform (x=22.5–25.5)
+        if (!st.s3) {
+          if (J(st, 'c', L.px > 23.5 && p.grounded && p.y > 14)) return true;
+          if (p.grounded && p.y < 14) st.s3 = 1;
+          return false;
         }
-        return false;
+        // phase 3: on y=13.5 platform, jump to y=11.5 platform (x=25–28.5)
+        if (!st.s4) {
+          if (J(st, 'd', L.px > 24.5 && p.grounded && p.y < 14)) return true;
+          if (p.grounded && p.y < 12) st.s4 = 1;
+          return false;
+        }
+        // phase 4: on y=11.5 platform, jump to solid block at y=9.5 (x=28–32) then walk into door
+        if (!st.s5) {
+          if (J(st, 'e', L.px > 27 && p.grounded && p.y < 12)) return true;
+          if (p.grounded && p.y < 10) st.s5 = 1;
+          return false;
+        }
+        // phase 5: on top block, walk right into door at x=29.5
+        k.right = 1; return false;
       },
     ];
 
@@ -258,9 +298,10 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         if (st.ph === 1) { A.to(5.7); B.to(16.7); if (b2.down) st.ph = 2; return; }
         if (st.ph === 2) { A.go(1); B.go(1); return; }
       },
-      // 14 Gravity Split: gate opens when anyone passes x=14; both go right, jump hidden spike
+      // 14 Gravity Split: gate opens when anyone passes x=14; both go right, jump hidden spike early
+      // Spike pops when leader passes x=24; fatal at x≈24.3 — must jump at x=23.5
       (L, A, B, st) => {
-        for (const P of [A, B]) { P.go(1); if (P.x > 25 && P.g) P.jumpOnce('sp'); }
+        for (const P of [A, B]) { P.go(1); if (P.x > 23.5 && P.g) P.jumpOnce('sp'); }
       },
       // 15 Detonator: quick tap each button, sprint
       (L, A, B, st) => {
@@ -491,11 +532,13 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
           if (A.g && B.g && A.y < 14 && B.y < 14) st.ph = 2;
           return;
         }
-        // on y=13 platform (x=21–23). Walk toward x=25 and jump up to hidden block at y=11
+        // on y=13 platform (x=21–23). Must jump BEFORE walking off edge at x=23.
+        // From y=13 block, jump apex reaches y≈9.2 (centre), easily clears y=11 target block.
+        // From floor (y=15) the apex is only y≈11.6 — insufficient to land on y=11. Must jump from platform.
         if (st.ph === 2) {
           pair(A, B, (P) => {
             P.go(1);
-            if (P.x > 24.5 && P.g && P.y > 10) P.jumpOnce('up2');  // jump to hidden block at y=11
+            if (P.x > 22 && P.g && P.y < 14) P.jumpOnce('up2');  // jump while still on y=13 block
           });
           if (A.g && B.g && A.y < 12 && B.y < 12) st.ph = 3;
           return;
