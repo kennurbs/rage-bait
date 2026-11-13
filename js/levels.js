@@ -402,7 +402,7 @@ const SINGLE = [
       L.on(() => L.px > 13.5, () => L.drop(c2, 0.45, { land: true }));
       L.on(() => L.px > 20.5, () => L.drop(c3, 0.45, { land: true }));
       // a single visible hazard instead of unfair hidden pop spikes directly at landing spots
-      const s = L.spike(18.5, 15, 1, 'up');
+      const s = L.spike(18.5, 15, 1, 'up', { hidden: true });
       // slow, steady saw from behind to keep pacing active without rushing
       const saw = L.saw(-2, 14.2, 0.75);
       L.on(() => L.px > 10, () => { saw.vx = 4.5; });
