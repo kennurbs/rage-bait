@@ -261,7 +261,6 @@ const SINGLE = [
       const d = L.door(28, 15);
       let fled = false;
       L.on(() => !fled && L.near(d, 3), () => { fled = true; L.moveDoor(d, 22, 15, 35); L.say('nope'); });
-      L.door(29, 15); // real door
     },
   },
   {
@@ -278,9 +277,9 @@ const SINGLE = [
       L.on(() => L.px > 14, () => { s2.vx = -5; });
       L.on(() => L.px > 22, () => { s3.vx = 5; });
       // invisible walls that reveal as narrow corridors
-      L.block(9, 10, 1, 5, { hidden: true });
-      L.block(17, 10, 1, 5, { hidden: true });
-      L.block(25, 10, 1, 5, { hidden: true });
+      L.block(9, 9, 1, 4, { hidden: true });
+      L.block(17, 9, 1, 4, { hidden: true });
+      L.block(25, 9, 1, 4, { hidden: true });
       const sp = L.spike(29, 15, 1, 'up', { hidden: true });
       L.on(() => L.px > 27.5, () => sp.pop());
       L.door(30, 15);
@@ -331,7 +330,6 @@ const SINGLE = [
       const d = L.door(29, 15);
       L.on(() => L.near(d, 2.5), () => { L.moveDoor(d, 2, 15, 50); L.say('see ya!'); L.mirror(); });
       L.on(() => L.near(d, 2) && d.x < 5, () => { L.say('gotcha'); });
-      L.door(2, 15); // real door placed first (at left after mirror shenanigan)
     },
   },
   {
@@ -379,6 +377,7 @@ const SINGLE = [
       L.on(() => L.px > 20.5, () => s2.pop());
       // door is a fake, real one is behind a hidden block
       const fake = L.door(28, 15, { fake: true });
+      L.block(21, 13.5, 2, 1, { hidden: true });
       L.block(25, 12, 2, 1, { hidden: true });
       L.door(25, 12);
       L.on(() => L.touch(fake), () => {
@@ -472,8 +471,9 @@ const SINGLE = [
       L.on(() => L.px > 20, () => { saw2.vx = -7; });
       // fake door then real one on hidden platform
       const fake = L.door(28, 15, { fake: true });
+      L.block(19, 13, 2, 1, { hidden: true });
       L.block(23, 11, 2, 1, { hidden: true });
-      L.door(23, 11);
+      L.door(23.5, 11);
       L.on(() => L.touch(fake), () => {
         L.fakeWin();
         L.wait(1.1, () => { L.banner = { text: 'JK', sub: 'check above you', t: 0, life: 2 }; });
@@ -712,23 +712,19 @@ const MULTI = [
       L.spawn(2, 15);
       L.text(3, 6, 'The plate is on a timer. Move fast.');
       L.block(0, 15, 32, 3);
-      // A button that only stays open for 2 seconds
+      // A button that holds the gate open with generous time for partner
       const btn = L.button(7, 15, 1.4, { color: 'red' });
-      let openUntil = -1;
-      L.on(() => btn.down && openUntil < 0, () => { openUntil = L.t + 2; L.say('2 seconds!'); }, { repeat: true });
-      // gate that only opens while timer is live
+      const b2 = L.button(24, 15, 1.4, { color: 'red' });
+      // gate that opens while either button is pressed
       L.block(16, 0, 2, 3);
       const gate = L.block(16, 3, 2, 12);
-      L.gate(gate, 0, -6, () => L.t < openUntil && openUntil > 0, { speed: 20, closeSpeed: 40, color: 'red' });
+      L.gate(gate, 0, -6, () => btn.down || b2.down, { speed: 12, closeSpeed: 25, color: 'red' });
       // spikes on each side
       const sl = L.spike(4, 15, 2, 'up', { hidden: true });
       const sr = L.spike(20, 15, 2, 'up', { hidden: true });
       L.on(() => btn.down, () => sl.pop());
       L.on(() => L.px > 18.5, () => sr.pop());
-      // door runs when both approach
-      const d = L.door(29, 15);
-      L.on(() => L.all(p => p.x + 0.4 > 25), () => { L.moveDoor(d, 10, 15, 40); L.say('scatter!'); });
-      L.on(() => L.all(p => p.x + 0.4 < 14), () => { L.say('gotcha'); });
+      L.door(29, 15);
     },
   },
   {
@@ -826,12 +822,13 @@ const MULTI = [
       const g1 = L.block(11, 4, 2, 11);
       L.block(20, 0, 2, 4);
       const g2 = L.block(20, 4, 2, 11);
-      L.gate(g1, 0, -5, () => b1.down, { speed: 25, closeSpeed: 60, color: 'red' });
-      L.gate(g2, 0, -5, () => b2.down, { speed: 25, closeSpeed: 60, color: 'red' });
+      L.gate(g1, 0, -5, () => b1.down, { speed: 12, closeSpeed: 10, color: 'red' });
+      L.gate(g2, 0, -5, () => b2.down, { speed: 12, closeSpeed: 10, color: 'red' });
       // overheld: a saw spawns
-      L.on(() => b1.held > 1.5, () => { const s = L.saw(7, -1, 0.7); s.vy = 18; L.say('held too long!'); }, { repeat: true });
-      L.on(() => b2.held > 1.5, () => { const s = L.saw(16, -1, 0.7); s.vy = 18; L.say('release!'); }, { repeat: true });
-      L.on(() => b3.held > 1.5, () => { const s = L.saw(25, -1, 0.7); s.vy = 18; L.say('oops'); }, { repeat: true });
+      let saw1 = false, saw2 = false, saw3 = false;
+      L.on(() => !saw1 && b1.held > 2.0, () => { saw1 = true; const s = L.saw(7, -1, 0.7); s.vy = 12; L.say('held too long!'); });
+      L.on(() => !saw2 && b2.held > 2.0, () => { saw2 = true; const s = L.saw(16, -1, 0.7); s.vy = 12; L.say('release!'); });
+      L.on(() => !saw3 && b3.held > 2.0, () => { saw3 = true; const s = L.saw(25, -1, 0.7); s.vy = 12; L.say('oops'); });
       const sp = L.spike(29, 15, 1, 'up', { hidden: true });
       L.on(() => L.px > 27.5, () => sp.pop());
       L.door(30, 15);
@@ -854,10 +851,10 @@ const MULTI = [
       L.block(14, 0, 4, 3); // top arch
       const archGate = L.block(14, 3, 4, 12);
       L.gate(archGate, 0, -12, () => btnL.down && btnR.down, { speed: 6, color: 'purple' });
-      const sp1 = L.spike(10, 13, 3, 'up', { hidden: true });
-      const sp2 = L.spike(19, 13, 3, 'up', { hidden: true });
-      L.on(() => L.any(p => p.x + 0.4 > 9 && p.x + 0.4 < 11.5), () => sp1.pop());
-      L.on(() => L.any(p => p.x + 0.4 > 20 && p.x + 0.4 < 22.5), () => sp2.pop());
+      const sp1 = L.spike(13, 13, 2, 'up', { hidden: true });
+      const sp2 = L.spike(17, 13, 2, 'up', { hidden: true });
+      L.on(() => L.any(p => p.x + 0.4 > 12 && p.x + 0.4 < 14), () => sp1.pop());
+      L.on(() => L.any(p => p.x + 0.4 > 17 && p.x + 0.4 < 19), () => sp2.pop());
       L.door(16, 15);
     },
   },
@@ -911,13 +908,9 @@ const MULTI = [
       L.spawn(2, 15);
       L.text(3, 5, 'Crates everywhere. Only one matters.');
       L.block(0, 11, 6, 7); L.block(6, 15, 26, 3);
-      // six crates: five mimic, one real
+      // two crates: one mimic, one real, and room to manoeuvre
       L.crate(1, 11, 1, { mimic: true });
-      L.crate(2, 11, 1, { mimic: true });
-      L.crate(3, 11, 1, { mimic: true });
       const realCrate = L.crate(4, 11);
-      L.crate(10, 15, 1, { mimic: true });
-      L.crate(14, 15, 1, { mimic: true });
       const btn = L.button(24, 15, 2.4, { color: 'orange' });
       const cage = [L.block(27, 10, 4.5, 0.5), L.block(27, 10.5, 0.5, 4.5), L.block(31, 10.5, 0.5, 4.5)];
       cage.forEach(c => L.gate(c, 0, -7, () => btn.down, { speed: 3, closeSpeed: 20, color: 'orange' }));
@@ -1312,13 +1305,13 @@ const SPECIAL = [
       L.spawn(2, 15);
       L.text(2, 5, 'Anchor on the ledge. Swing partner across the pit.');
       L.block(0, 15, 8, 3);
-      L.block(8, 17, 14, 1);
-      L.spike(8, 17, 14, 'up');
-      L.block(22, 15, 10, 3);
+      L.block(8, 17, 8, 1);
+      L.spike(8, 17, 8, 'up');
+      L.block(16, 15, 16, 3);
       // overhead anchor block
-      L.block(13, 8, 4, 1);
+      L.block(11, 9, 3, 1);
       L.on(() => L.px > 7, () => L.setRope(5.5));
-      L.on(() => L.all((p) => p.x > 22 && p.grounded), () => L.setRope(2.5));
+      L.on(() => L.all((p) => p.x > 16.5 && p.grounded), () => L.setRope(2.5));
       const s = L.spike(26, 15, 2, 'up', { hidden: true });
       L.on(() => L.px > 24.5, () => s.pop());
       L.door(29, 15);
@@ -1369,6 +1362,7 @@ const SPECIAL = [
       L.on(() => L.px > 10, () => L.setRope(2.0));
       // fake door and real door trick
       const fake = L.door(28, 15, { fake: true });
+      L.block(21, 13, 2, 1, { hidden: true });
       L.block(25, 11, 2, 1, { hidden: true });
       L.door(25, 11);
       L.on(() => L.touch(fake), () => {
