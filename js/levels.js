@@ -783,24 +783,15 @@ const MULTI = [
   {
     name: 'Gravity Split',
     build(L) {
-      L.spawn(2, 15); L.spawn2(2, 2);
-      L.text(3, 8, 'One above, one below. Both upside down at once.');
+      L.spawn(2, 15); L.spawn2(2, 15);
+      L.text(3, 8, 'The gate closes fast. Run together or run last.');
       L.block(0, 15, 32, 3);
-      L.block(0, 0, 32, 3);
-      // top player starts flipped
-      L.on(() => L.all(p => p.grounded), () => { if (L.g > 0) return; }, { repeat: true });
-      L.pad(5, 15, 2, -1);
-      L.pad(5, 3, 2, 1);
-      // platforms for top lane
-      L.block(10, 2, 8, 1); L.block(20, 2, 8, 1);
-      // platforms for bottom lane
+      // platforms for each lane
       L.block(10, 15, 8, 1); L.block(20, 15, 8, 1);
-      // gate needs both on respective buttons
-      L.block(16, 4, 2, 11);
-      const gate = L.block(16, 4, 2, 7);
-      const bTop = L.button(8, 3, 1.4, { color: 'purple' });
-      const bBot = L.button(8, 15, 1.4, { color: 'purple' });
-      L.gate(gate, 0, -7, () => bTop.down && bBot.down, { speed: 8, color: 'purple' });
+      // gate: full-height wall that slides up when first player crosses x=14.
+      // Closes slowly — the second player must rush through before it shuts.
+      const gate = L.block(16, 0, 2, 15);
+      L.gate(gate, 0, -15, () => L.any(p => p.x + p.w / 2 > 14), { speed: 12, closeSpeed: 5, color: 'purple' });
       const sp = L.spike(26, 15, 2, 'up', { hidden: true });
       L.on(() => L.py > 10 && L.px > 24, () => sp.pop());
       L.door(29, 15);

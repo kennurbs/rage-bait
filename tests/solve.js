@@ -258,7 +258,7 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         if (st.ph === 1) { A.to(5.7); B.to(16.7); if (b2.down) st.ph = 2; return; }
         if (st.ph === 2) { A.go(1); B.go(1); return; }
       },
-      // 14 Gravity Split: simple - both go right
+      // 14 Gravity Split: gate opens when anyone passes x=14; both go right, jump hidden spike
       (L, A, B, st) => {
         for (const P of [A, B]) { P.go(1); if (P.x > 25 && P.g) P.jumpOnce('sp'); }
       },
@@ -471,17 +471,37 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
           if (P.x > 25.2 && P.g) P.jumpOnce('s3');
         });
       },
-      // 20 Eternal Bond: combo obstacles to upper ledge
+      // 20 Eternal Bond: combo obstacles to upper ledge, then climb hidden platforms to real door
       (L, A, B, st) => {
-        pair(A, B, (P) => {
-          if (P.y > 13) {
+        if (!st.ph) {
+          pair(A, B, (P) => {
             P.go(1);
-            if (P.x > 12.2 && P.g) P.jumpOnce('p1');
-            if (P.x > 23.2 && P.g) P.jumpOnce('p2');
-          } else {
+            if (P.x > 12.2 && P.g) P.jumpOnce('p1');   // leap over crusher zone (x=14–18)
+          });
+          if (A.g && B.g && A.x > 23 && B.x > 23) st.ph = 1;
+          return;
+        }
+        // arrived past x=23 on the floor (y≈15). Walk back to x≈22 (above hidden block at y=13)
+        if (st.ph === 1) {
+          pair(A, B, (P) => {
+            const tgt = P.y < 14 ? 25.5 : 22;    // if already elevated, go toward upper block
+            P.to(tgt);
+            if (near(P, 22, 0.6) && P.g && P.y > 13) P.jumpOnce('up1');  // jump to hidden block at y=13
+          });
+          if (A.g && B.g && A.y < 14 && B.y < 14) st.ph = 2;
+          return;
+        }
+        // on y=13 platform (x=21–23). Walk toward x=25 and jump up to hidden block at y=11
+        if (st.ph === 2) {
+          pair(A, B, (P) => {
             P.go(1);
-          }
-        });
+            if (P.x > 24.5 && P.g && P.y > 10) P.jumpOnce('up2');  // jump to hidden block at y=11
+          });
+          if (A.g && B.g && A.y < 12 && B.y < 12) st.ph = 3;
+          return;
+        }
+        // on y=11 platform (x=25–27). Walk right into real door at x=25, y≈9.4
+        pair(A, B, (P) => P.go(1));
       },
     ];
 
