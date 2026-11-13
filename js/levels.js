@@ -456,7 +456,9 @@ const SINGLE = [
       L.on(() => L.px > 17, () => { L.invert = false; L.say('you\'re welcome'); });
       // crusher: narrower, telegraphed, single trigger, sits over the island
       const crush = L.block(19, 0, 3, 7);
-      L.on(() => L.px > 17.5, () => L.drop(crush, 0.45, { land: true }));
+      let slamAt = -1, slamUntil = -1;
+      L.on(() => L.px > 17.5, () => { slamAt = L.t + 0.7; slamUntil = slamAt + 0.6; });
+      L.gate(crush, 0, 8, () => L.t >= slamAt && L.t < slamUntil, { speed: 30, closeSpeed: 6 });
       // lag for the final stretch
       L.block(22, 15, 10, 3);
       L.on(() => L.px > 22, () => { L.jumpDelay = 0.2; L.say('lag!'); });
@@ -467,10 +469,10 @@ const SINGLE = [
       L.on(() => L.px > 20, () => { saw2.vx = -7; });
       // fake door, then the real one on a climbable hidden staircase
       const fake = L.door(28, 15, { fake: true });
-      L.block(22.5, 13.5, 2.5, 1, { hidden: true });
-      L.block(25.5, 11.5, 2.5, 1, { hidden: true });
-      L.block(28.5, 8.5, 3.5, 1);
-      L.door(29.5, 8.5);
+      L.block(22.5, 13.5, 3, 1, { hidden: true });
+      L.block(25, 11.5, 3.5, 1, { hidden: true });
+      L.block(28, 9.5, 4, 1);
+      L.door(29.5, 9.5);
       L.on(() => L.touch(fake), () => {
         L.fakeWin();
         L.wait(1.1, () => { L.banner = { text: 'JK', sub: 'check above you', t: 0, life: 2 }; });
