@@ -26,12 +26,18 @@
   const STRIKES = 3; // deaths in one level (2-player modes) before you get sent back
   const ROPE = 4.2; // chain length in tiles (special mode)
   const MODES = [
-    { id: 'single', name: 'SINGLE PLAYER', sub: 'just you vs. the level', players: 1,
-      hint: '←/→ or A/D move · SPACE / ↑ / W jump' },
-    { id: 'multi', name: 'MULTIPLAYER', sub: '2 players · one keyboard', players: 2,
-      hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump' },
-    { id: 'special', name: 'SPECIAL', sub: '2 players · trust us', players: 2, chained: true,
-      label: 'SPECIAL (CHAINED)', hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump' },
+    {
+      id: 'single', name: 'SINGLE PLAYER', sub: 'just you vs. the level', players: 1,
+      hint: '←/→ or A/D move · SPACE / ↑ / W jump'
+    },
+    {
+      id: 'multi', name: 'MULTIPLAYER', sub: '2 players · one keyboard', players: 2,
+      hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump'
+    },
+    {
+      id: 'special', name: 'SPECIAL', sub: '2 players · trust us', players: 2, chained: true,
+      label: 'SPECIAL (CHAINED)', hint: 'P1: A/D move, W jump   ·   P2: ←/→ move, ↑ jump'
+    },
   ];
   const MODE = Object.fromEntries(MODES.map((m) => [m.id, m]));
   const course = (mode) => LEVELS[mode];
@@ -251,15 +257,19 @@
     flipView(on = true) { this.view.flip = on; if (on) this.say('which way is up?'); sfx.flip(); }
     moveBlock(b, x, y, speed = 8) { b.goal = { x, y, speed }; }
     block(x, y, w, h, o = {}) {
-      const b = { kind: 'block', x, y, w, h, vy: 0, dx: 0, dy: 0, solid: true, hidden: false, crumble: 0,
-        pending: false, falling: false, shakeT: 0, land: false, gone: false, flash: 0, sparkle: Math.random() * 3, ...o };
+      const b = {
+        kind: 'block', x, y, w, h, vy: 0, dx: 0, dy: 0, solid: true, hidden: false, crumble: 0,
+        pending: false, falling: false, shakeT: 0, land: false, gone: false, flash: 0, sparkle: Math.random() * 3, ...o
+      };
       this.blocks.push(b); return b;
     }
     spike(x, y, w, dir = 'up', o = {}) {
       const L = this;
-      const s = { kind: 'spike', x, y, w, dir, out: o.hidden ? 0 : 1, target: o.hidden ? 0 : 1,
+      const s = {
+        kind: 'spike', x, y, w, dir, out: o.hidden ? 0 : 1, target: o.hidden ? 0 : 1,
         pop() { if (s.target !== 1) { s.target = 1; sfx.pop(); L.shake(0.08, 0.08); } },
-        hide() { s.target = 0; } };
+        hide() { s.target = 0; }
+      };
       this.spikes.push(s); return s;
     }
     door(x, floorY, o = {}) {
@@ -651,7 +661,7 @@
   const game = {
     state: 'title', // title | mode | select | play | end
     mode: 'single', modeSel: 0,
-    level: null, idx: 0, sel: 0, message: null, time: 0, strikes: 0, runDeaths: [0, 0],
+    level: null, idx: 0, sel: 0, scrollY: 0, targetScrollY: 0, message: null, time: 0, strikes: 0, runDeaths: [0, 0],
     unlocked() { return Math.min(save.progress[this.mode] || 1, course(this.mode).length); },
     clearInput() { pressed[0].clear(); pressed[1].clear(); },
     setMode(id) { this.mode = id; syncCtl(); },
@@ -684,25 +694,40 @@
       if (code === 'ArrowRight' || code === 'KeyD' || code === 'ArrowDown' || code === 'KeyS') { game.modeSel = Math.min(MODES.length - 1, game.modeSel + 1); sfx.click(); }
       if (code === 'ArrowLeft' || code === 'KeyA' || code === 'ArrowUp' || code === 'KeyW') { game.modeSel = Math.max(0, game.modeSel - 1); sfx.click(); }
       if (go) { sfx.click(); game.setMode(MODES[game.modeSel].id); game.start(game.unlocked() - 1); }
-      if (code === 'KeyL') { sfx.click(); game.setMode(MODES[game.modeSel].id); game.state = 'select'; game.sel = game.unlocked() - 1; }
+      if (code === 'KeyL') {
+        sfx.click();
+        game.setMode(MODES[game.modeSel].id);
+        game.state = 'select';
+        game.sel = game.unlocked() - 1;
+        updateSelectScroll(true);
+      }
       if (code === 'Escape') game.state = 'title';
     } else if (game.state === 'select') {
       const n = game.unlocked();
+      const prevSel = game.sel;
       if (code === 'ArrowRight' || code === 'KeyD') game.sel = Math.min(n - 1, game.sel + 1);
       if (code === 'ArrowLeft' || code === 'KeyA') game.sel = Math.max(0, game.sel - 1);
-      if (code === 'ArrowDown' || code === 'KeyS') game.sel = Math.min(n - 1, game.sel + 5);
-      if (code === 'ArrowUp' || code === 'KeyW') game.sel = Math.max(0, game.sel - 5);
+      if (code === 'ArrowDown' || code === 'KeyS') game.sel = Math.min(n - 1, game.sel + SEL.cols);
+      if (code === 'ArrowUp' || code === 'KeyW') game.sel = Math.max(0, game.sel - SEL.cols);
+      if (game.sel !== prevSel) {
+        sfx.click();
+        updateSelectScroll();
+      }
       if (go) { sfx.click(); game.start(game.sel); }
       if (code === 'Escape') game.state = 'mode';
     } else if (game.state === 'play') {
       if (code === 'KeyR' && !game.level.won) game.level.kill();
-      if (code === 'Escape') { game.state = 'select'; game.sel = game.idx; }
+      if (code === 'Escape') {
+        game.state = 'select';
+        game.sel = game.idx;
+        updateSelectScroll(true);
+      }
     } else if (game.state === 'end') {
       if (go || code === 'Escape') game.state = 'mode';
     }
   }
 
-  // clicks / taps on menus
+  // clicks / taps on menus & wheel scrolling
   {
     const cv = document.getElementById('game');
     cv.addEventListener('pointerdown', (e) => {
@@ -717,10 +742,18 @@
         else if (y < 90) onKey('Escape');
       } else if (game.state === 'select') {
         const i = selectHit(x, y);
-        if (i >= 0 && i < game.unlocked()) { game.sel = i; onKey('Enter'); }
+        if (i >= 0 && i < game.unlocked()) { game.sel = i; updateSelectScroll(); onKey('Enter'); }
         else if (y < 90) onKey('Escape');
       } else if (game.state === 'end') onKey('Enter');
     });
+
+    cv.addEventListener('wheel', (e) => {
+      if (game.state === 'select') {
+        e.preventDefault();
+        const maxScroll = maxSelectScroll();
+        game.targetScrollY = clamp(game.targetScrollY + Math.sign(e.deltaY) * 60, 0, maxScroll);
+      }
+    }, { passive: false });
   }
 
   // ---------------------------------------------------------------- rendering
@@ -1001,30 +1034,99 @@
     text(save.muted ? 'sound off (M)' : 'sound on (M)', VW / 2, VH - 20, 12, C.dim, 'center', 'normal');
   }
 
-  const SEL = { cols: 5, w: 120, h: 92, gap: 26, top: 170 };
-  function selectRect(i) {
-    const totalW = SEL.cols * SEL.w + (SEL.cols - 1) * SEL.gap, x0 = (VW - totalW) / 2;
-    return { x: x0 + (i % SEL.cols) * (SEL.w + SEL.gap), y: SEL.top + Math.floor(i / SEL.cols) * (SEL.h + SEL.gap), w: SEL.w, h: SEL.h };
+  const SEL = { cols: 5, w: 120, h: 86, gapX: 24, gapY: 14, viewTop: 116, viewBottom: 426 };
+  function rowStep() { return SEL.h + SEL.gapY; }
+  function maxSelectScroll() {
+    const totalLevels = course(game.mode).length;
+    const totalRows = Math.ceil(totalLevels / SEL.cols);
+    const visibleRows = Math.floor((SEL.viewBottom - SEL.viewTop + SEL.gapY) / rowStep());
+    const extraRows = Math.max(0, totalRows - visibleRows);
+    return extraRows * rowStep();
+  }
+  function selectRect(i, scroll = 0) {
+    const totalW = SEL.cols * SEL.w + (SEL.cols - 1) * SEL.gapX, x0 = (VW - totalW) / 2;
+    const row = Math.floor(i / SEL.cols);
+    const col = i % SEL.cols;
+    return {
+      x: x0 + col * (SEL.w + SEL.gapX),
+      y: SEL.viewTop + row * rowStep() - scroll,
+      w: SEL.w,
+      h: SEL.h
+    };
   }
   function selectHit(x, y) {
-    for (let i = 0; i < course(game.mode).length; i++) { const r = selectRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i; }
+    if (y < SEL.viewTop || y > SEL.viewBottom) return -1;
+    for (let i = 0; i < course(game.mode).length; i++) {
+      const r = selectRect(i, game.scrollY);
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i;
+    }
     return -1;
+  }
+  function updateSelectScroll(instantly = false) {
+    const sel = game.sel;
+    const row = Math.floor(sel / SEL.cols);
+    const step = rowStep();
+    const visibleRows = Math.floor((SEL.viewBottom - SEL.viewTop + SEL.gapY) / step);
+    const maxScroll = maxSelectScroll();
+
+    const curScrollRow = Math.round(game.targetScrollY / step);
+    if (row < curScrollRow) {
+      game.targetScrollY = row * step;
+    } else if (row >= curScrollRow + visibleRows) {
+      game.targetScrollY = (row - visibleRows + 1) * step;
+    }
+    game.targetScrollY = clamp(game.targetScrollY, 0, maxScroll);
+    if (instantly) game.scrollY = game.targetScrollY;
   }
   function drawSelect(t) {
     drawBg();
-    text('PICK YOUR POISON', VW / 2, 80, 40, C.player);
-    text(`${MODE[game.mode].name} · ESC back`, VW / 2, 120, 14, C.dim, 'center', 'normal');
+    text('PICK YOUR POISON', VW / 2, 45, 36, C.player);
+    text(`${MODE[game.mode].name} · ESC back · ↑/↓/Wheel to scroll`, VW / 2, 82, 13, C.dim, 'center', 'normal');
+
+    // Smooth scroll interpolation
+    game.scrollY = approach(game.scrollY, game.targetScrollY, 20);
+
+    // Clip to scroll viewable area
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, SEL.viewTop, VW, SEL.viewBottom - SEL.viewTop);
+    ctx.clip();
+
     for (let i = 0; i < course(game.mode).length; i++) {
-      const r = selectRect(i), open = i < game.unlocked(), on = i === game.sel;
+      const r = selectRect(i, game.scrollY);
+      if (r.y + r.h < SEL.viewTop - 5 || r.y > SEL.viewBottom + 5) continue;
+      const open = i < game.unlocked(), on = i === game.sel;
       ctx.fillStyle = on ? 'rgba(255,79,139,0.25)' : 'rgba(232,230,240,0.06)';
       roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
       ctx.strokeStyle = on ? C.player : open ? C.blockEdge : 'rgba(232,230,240,0.15)'; ctx.lineWidth = on ? 3 : 1.5; ctx.stroke();
-      text(open ? String(i + 1) : '?', r.x + r.w / 2, r.y + 34, 32, open ? C.text : C.dim);
+      text(open ? String(i + 1) : '?', r.x + r.w / 2, r.y + 32, 30, open ? C.text : C.dim);
       const d = save.levelDeaths[dkey(game.mode, i)] || 0;
-      text(open ? `☠ ${d}` : 'locked', r.x + r.w / 2, r.y + 70, 13, open ? C.danger : C.dim, 'center', 'normal');
+      text(open ? `☠ ${d}` : 'locked', r.x + r.w / 2, r.y + 65, 13, open ? C.danger : C.dim, 'center', 'normal');
     }
+    ctx.restore();
+
+    // Scrollbar indicator
+    const maxScroll = maxSelectScroll();
+    if (maxScroll > 0) {
+      const barTrackX = VW - 30;
+      const barTrackY = SEL.viewTop;
+      const barTrackH = SEL.viewBottom - SEL.viewTop;
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      roundRect(barTrackX, barTrackY, 5, barTrackH, 2.5);
+      ctx.fill();
+
+      const totalH = (SEL.viewBottom - SEL.viewTop) + maxScroll;
+      const viewRatio = (SEL.viewBottom - SEL.viewTop) / totalH;
+      const thumbH = Math.max(32, barTrackH * viewRatio);
+      const thumbY = barTrackY + (game.scrollY / maxScroll) * (barTrackH - thumbH);
+      ctx.fillStyle = C.portal;
+      roundRect(barTrackX, thumbY, 5, thumbH, 2.5);
+      ctx.fill();
+    }
+
+    // Selected level description footer
     const s = course(game.mode)[game.sel];
-    if (s) text(s.name, VW / 2, VH - 70, 22, C.portal);
+    if (s) text(s.name, VW / 2, VH - 50, 22, C.portal);
   }
 
   const MCARD = { w: 270, h: 260, gap: 30, top: 140 };
