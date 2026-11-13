@@ -448,15 +448,15 @@ const SINGLE = [
       L.pad(4, 15, 2, -1);
       L.block(6, 0, 4, 3);
       L.pad(8, 3, 2, 1);
-      // crumble section
-      for (let x = 10; x < 18; x++) L.block(x, 15, 1, 1, { crumble: 0.1 });
+      // crumble section (slightly more forgiving: 0.1 -> 0.14)
+      for (let x = 10; x < 18; x++) L.block(x, 15, 1, 1, { crumble: 0.14 });
       L.block(18, 15, 4, 3);
-      // inverted controls
-      L.on(() => L.px > 14, () => { L.invert = true; L.say('and inverted'); });
-      L.on(() => L.px > 22, () => { L.invert = false; L.say('you\'re welcome'); });
-      // crusher at the gap
-      const crush = L.block(19, 0, 4, 10);
-      L.on(() => L.px > 17, () => L.drop(crush, 0.05, { land: true }));
+      // inverted controls only on the crumble stretch, cleared before the crusher
+      L.on(() => L.px > 12, () => { L.invert = true; L.say('and inverted'); });
+      L.on(() => L.px > 17, () => { L.invert = false; L.say('you\'re welcome'); });
+      // crusher: narrower, telegraphed, single trigger, sits over the island
+      const crush = L.block(19, 0, 3, 7);
+      L.on(() => L.px > 17.5, () => L.drop(crush, 0.45, { land: true }));
       // lag for the final stretch
       L.block(22, 15, 10, 3);
       L.on(() => L.px > 22, () => { L.jumpDelay = 0.2; L.say('lag!'); });
@@ -465,12 +465,12 @@ const SINGLE = [
       const saw2 = L.saw(34, 14.2, 0.75);
       L.on(() => L.px > 8, () => { saw1.vx = 7; });
       L.on(() => L.px > 20, () => { saw2.vx = -7; });
-      // fake door then real one on climbable hidden staircase
+      // fake door, then the real one on a climbable hidden staircase
       const fake = L.door(28, 15, { fake: true });
-      L.block(23.5, 12.5, 2, 1, { hidden: true });
-      L.block(26, 10, 2, 1, { hidden: true });
-      L.block(28.5, 7.5, 3.5, 1);
-      L.door(29.5, 7.5);
+      L.block(22.5, 13.5, 2.5, 1, { hidden: true });
+      L.block(25.5, 11.5, 2.5, 1, { hidden: true });
+      L.block(28.5, 8.5, 3.5, 1);
+      L.door(29.5, 8.5);
       L.on(() => L.touch(fake), () => {
         L.fakeWin();
         L.wait(1.1, () => { L.banner = { text: 'JK', sub: 'check above you', t: 0, life: 2 }; });
