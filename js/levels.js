@@ -5,11 +5,13 @@
  * Each level's build(L) receives the level runtime and uses its helpers:
  *
  *   L.spawn(x, floorY)            player start (standing on floorY)
- *   L.block(x, y, w, h, opts)     solid rectangle. opts: { hidden, crumble }
- *   L.spike(x, y, w, dir, opts)   row of spikes on surface y. dir 'up' | 'down'. opts: { hidden }
+ *   L.block(x, y, w, h, opts)     solid rectangle. opts: { hidden, crumble, solid: false (looks solid, isn't), fall (fall speed x) }
+ *   L.spike(x, y, w, dir, opts)   row of spikes on surface y. dir 'up' | 'down'. opts: { hidden, fake (harmless) }
  *   L.door(x, floorY, opts)       exit portal. opts: { fake }
- *   L.saw(cx, cy, r)              spinning saw blade (inactive until given vx)
+ *   L.saw(cx, cy, r, opts)        spinning saw blade (inactive until given vx). opts: { buried (drawn behind blocks) }
+ *   L.laser(x, y, w, h, opts)     timed beam, kills while on. opts: { on, off, phase } (seconds)
  *   L.pad(x, y, w, gravity)       gravity pad: sets gravity to +1 (down) or -1 (up)
+ *   L.ladder(x, y, w, h)          climbable zone: hold jump to climb, slide down otherwise
  *   L.flag(x, floorY)             decorative checkpoint flag (100% trustworthy)
  *   L.text(x, y, str)             faint background text
  *
@@ -22,6 +24,12 @@
  *                                 (in 2-player modes, conditions are checked for each player
  *                                 and these refer to the player being checked)
  *   L.g, L.invert, L.jumpDelay    gravity sign, inverted controls, jump input lag (s)
+ *   L.speedMul                    run speed multiplier (1 = normal)
+ *   block.ghost = true            draw a block see-through (pair with block.solid = false)
+ *   L.player.w / .h               resizable at runtime (sprite scales with width)
+ *   L.deaths                      saved death count for this level (vary the trap per attempt)
+ *   L.dark = r                    darkness: only a circle of radius r (tiles) around the player is lit
+ *                                 (lightsOut(L, r) adds the lights flickering on every 3-5 s)
  *
  * Co-op helpers (used by the multiplayer and special courses):
  *   L.spawn2(x, floorY)           player 2 start (default: next to player 1)
@@ -42,6 +50,150 @@
  *   spike.hide()                  retract a popped spike
  *   Players can stand on each other's heads.
  */
+// darkness that the lights break through for a split second every 7-10 s (a quick double flicker)
+function lightsOut(L, r) {
+  L.dark = r;
+  const flicker = () => {
+    L.dark = 0;
+    L.wait(0.08, () => { L.dark = r; });
+    L.wait(0.14, () => { L.dark = 0; });
+    L.wait(0.26, () => { L.dark = r; L.wait(3 + Math.random() * 2, flicker); });
+  };
+  L.wait(3 + Math.random() * 2, flicker);
+}
+
+// Elevator Pitch's bonus room: one platform carries you all the way into the portal. everything
+// on the way pretends it's about to kill you so you'll jump or step off, and that is what kills you.
+function bonus(L) {
+  L.blocks = []; L.spikes = []; L.saws = []; L.doors = []; L.texts = []; L.lasers = [];
+  L.triggers.length = 0; L.jumpHooks.length = 0; L.timers.length = 0;
+  L.banner = { text: 'BONUS ROOM', sub: '', t: 0, life: 1.8 };
+  L.spike(0, 18, 32, 'up');
+  const P = L.block(1, 16.5, 2.5, 0.5);
+  const p = L.player;
+  p.x = P.x + 0.85; p.y = P.y - p.h; p.vx = 0; p.vy = 0;
+  L.invert = false;
+  // decoy: a "safe" ledge with a portal. both fake
+  L.text(7.2, 4.6, 'JUMP! →');
+  L.block(9, 6.5, 3, 0.5, { solid: false });
+  L.door(10, 6.5, { fake: true });
+  // a saw at head height that dodges at the last second
+  const s1 = L.saw(13.8, 9.55, 0.7);
+  L.on(() => P.x + 2.5 > s1.x - 1.5, () => { s1.vy = -14; });
+  L.on(() => s1.y <= 6, () => { s1.vy = 0; });
+  // a low saw that skims just over your head
+  L.saw(17.5, 8.35, 0.7);
+  // a laser across the path that cuts out at the last second
+  const beam = L.laser(19.6, 0, 0.3, 9.6, { on: 1e9, off: 1 });
+  L.on(() => P.x > 16.7, () => { L.lasers.splice(L.lasers.indexOf(beam), 1); L.say('zzt'); });
+  // a spiked crusher in the way that lifts just in time
+  const K = L.block(24.3, 10.5, 2, 1.5);
+  const ks = L.spike(24.3, 12, 2, 'down');
+  let lifted = false;
+  L.gate(K, 0, -3.5, () => { ks.y = K.y + K.h; return lifted; }, { speed: 16 });
+  L.on(() => P.y > 12.9 && P.x + 2.5 > 23.6, () => { lifted = true; });
+  L.door(29.4, 7);
+  // the ride: [x, y, speed, pause after, what happens on arrival]
+  const path = [
+    [1, 10, 5, 0.3],
+    [21, 10, 4, 0, () => L.say('uh oh')],
+    [21, 13, 14, 0.5],
+    [27, 13, 4, 1.3, () => { P.pending = true; P.shakeT = 99; L.say('creak...'); L.wait(1.2, () => { P.pending = false; }); }],
+    [27, 7, 4, 0.2],
+    [31, 7, 3, 0],
+  ];
+  const go = (i) => {
+    if (i >= path.length) return;
+    const [x, y, speed, pause, fn] = path[i];
+    L.moveBlock(P, x, y, speed);
+    L.on(() => P.x === x && P.y === y, () => { if (fn) fn(); L.wait(pause, () => go(i + 1)); });
+  };
+  go(0);
+}
+
+// The Undoing, room B: lights out over a two-floor maze while a laser rises from below.
+function undoingB(L) {
+  L.blocks = []; L.spikes = []; L.saws = []; L.doors = []; L.texts = []; L.lasers = []; L.ladders = [];
+  L.triggers.length = 0; L.jumpHooks.length = 0; L.timers.length = 0;
+  L.room = 'B'; L.light = null; L.banner = { text: "DON'T BLINK", sub: '', t: 0, life: 1.4 };
+  const p = L.player;
+  p.x = 1.1; p.y = 0.2; p.vx = 0; p.vy = 0;
+  const start = { x: 1.1, y: 15 - p.h };
+  L.block(0, -1, 3.8, 1); L.block(5.6, -1, 26.4, 1);      // ceiling, with the exit above the last ladder
+  L.block(0, 15, 32, 3);                                 // floor 0
+  for (const [a, b] of [[0, 0.5], [2.5, 12], [13.5, 29], [30.5, 32]]) L.block(a, 10, b - a, 1);  // floor 1
+  // floor 0, heading right: a spike ceiling to tap under, a 5x zone through a laser, a teleport tile
+  L.spike(7, 11, 5, 'down');
+  L.spike(10, 15, 1, 'up');
+  L.laser(17.85, 11, 0.3, 4, { on: 0.8, off: 0.8 });
+  L.speedMul = 1;
+  const fast = () => L.py > 11 && L.px > 14 && L.px < 22;
+  L.on(() => fast() !== (L.speedMul > 1), () => {
+    L.speedMul = fast() ? 5 : 1;
+    L.player.vx = Math.max(-8, Math.min(8, L.player.vx));
+  }, { repeat: true });
+  L.ladder(29.3, 9.5, 1, 5.5);
+  // floor 1, heading left: a teleport tile, a hole back down, then the ladder out through the ceiling
+  L.ladder(4.2, -1.5, 1, 11.5);
+  L.block(3, 0, 0.6, 10);                               // wall: no falling in straight onto the exit ladder
+  for (const [x, y] of [[24.5, 15], [20, 10]]) {
+    L.text(x + 0.12, y - 0.35, '✕');
+    L.on(() => L.player.grounded && Math.abs(L.player.y + L.player.h - y) < 0.05 && L.player.x < x + 1 && L.player.x + L.player.w > x, () => {
+      p.x = start.x; p.y = start.y; p.vx = 0; p.vy = 0; L.speedMul = 1; L.say('back to start!'); L.shake(0.2, 0.2);
+    }, { repeat: true });
+  }
+  const t0 = L.t, lava = L.laser(0, 18.5, 32, 0.3, { on: 1e9, off: 1 });
+  L.on(() => true, () => { lava.y = 18.5 - Math.max(0, L.t - t0 - 1.5) * 0.55; }, { repeat: true });
+  L.wait(1.5, () => lightsOut(L, 1.6));
+  L.on(() => L.py < 0.3, () => undoingC(L));
+}
+
+// The Undoing, room C: the real portal is the one the sign tells you to jump to, right at the start.
+// the ride after it (dodging saw, laser, drop, crumbling platform, inverted last jump) leads to a fake.
+function undoingC(L) {
+  L.blocks = []; L.spikes = []; L.saws = []; L.doors = []; L.texts = []; L.lasers = []; L.ladders = [];
+  L.triggers.length = 0; L.jumpHooks.length = 0; L.timers.length = 0;
+  L.room = 'C'; L.dark = 0; L.speedMul = 1; L.invert = false;
+  L.banner = { text: 'LAST ROOM', sub: '', t: 0, life: 1.8 };
+  L.spike(0, 18, 32, 'up');
+  const P = L.block(1, 17.5, 2.5, 0.5, { fall: 2.5 });
+  const p = L.player;
+  p.x = P.x + 0.85; p.y = P.y - p.h; p.vx = 0; p.vy = 0;
+  // the portal right by the start is the real one; the whole ride after it is the decoy
+  L.block(4.5, 6.5, 3, 0.5);
+  L.saw(5.05, 6.5, 0.6, { buried: true });               // guards the left of the real portal: clear it, land right of it
+  L.door(5.5, 6.5);
+  const s1 = L.saw(8, 8.55, 0.7);
+  L.on(() => P.x + 2.5 > s1.x - 1.5, () => { s1.vy = -14; });
+  L.on(() => s1.y <= 5, () => { s1.vy = 0; });
+  L.saw(12, 7.33, 0.7);
+  const beam = L.laser(14.6, 0, 0.3, 8.6, { on: 1e9, off: 1 });
+  L.on(() => P.x > 11.7, () => { L.lasers.splice(L.lasers.indexOf(beam), 1); L.say('zzt'); });
+  L.block(22.5, 12, 9.5, 1);
+  L.spike(25, 12, 1.5, 'up');
+  const decoy = L.door(29.5, 12, { fake: true });
+  const decoyTrap = L.spike(27, 12, 5, 'up', { hidden: true });
+  L.on(() => L.touch(decoy), () => { decoyTrap.pop(); L.banner = { text: 'FAKE', sub: '', t: 0, life: 1.4 }; });
+  // the inversion: on even death counts it hits when you jump, on odd ones as you walk up
+  const early = L.deaths % 2 === 1;
+  const flip = () => { L.invert = true; };
+  if (early) L.on(() => L.py < 12 && L.px > 23.5, flip);
+  else L.onJump(() => { if (L.py < 12 && L.px > 22.5) flip(); });
+  const path = [
+    [1, 9, 5, 0.3],
+    [16, 9, 4, 0, () => L.say('uh oh')],
+    [16, 12, 14, 0.4],
+    [20, 12, 4, 0, () => { L.say('creak...'); L.drop(P, 0.3); }],
+  ];
+  const go = (i) => {
+    if (i >= path.length) return;
+    const [x, y, speed, pause, fn] = path[i];
+    L.moveBlock(P, x, y, speed);
+    L.on(() => P.x === x && P.y === y, () => { if (fn) fn(); L.wait(pause, () => go(i + 1)); });
+  };
+  go(0);
+}
+
 const SINGLE = [
 
   {
@@ -477,6 +629,517 @@ const SINGLE = [
         L.say('not so fast');
       });
       L.on(() => L.px > 26, () => { L.jumpDelay = 0; });
+    },
+  },
+  // ---------------------------------------------------------------- levels 21-30 (single-player, mind games)
+  {
+    // the brutal climb up top leads to a fake portal; of the three "death holes" by spawn, the middle one
+    // drops you into a bonus room with the real one
+    name: 'Leap of Faith',
+    build(L) {
+      L.spawn(2, 15);
+      // three identical holes over lava; only the middle one is a way through
+      L.block(0, 15, 3.5, 3);
+      L.block(5.5, 15, 1.5, 3);
+      L.block(9, 15, 1.5, 3);
+      L.block(12, 15, 20, 3);
+      L.spike(0, 18, 12, 'up');
+      // fall through the middle hole: wipe the level and drop in from the top of an empty room
+      L.on(() => L.py > 16.5 && L.px > 7 && L.px < 9, () => {
+        L.blocks = []; L.spikes = []; L.saws = []; L.doors = []; L.texts = [];
+        L.triggers.length = 0; L.jumpHooks.length = 0;
+        L.player.y = -1;
+        L.block(0, 15, 32, 3);
+        L.text(9, 6, 'Reverse REVERSE Psychology???');
+        L.door(24, 15);
+        L.shake(0.3, 0.3);
+      });
+
+      // the decoy climb
+      L.spike(12, 15, 20, 'up');
+      const step = L.block(12, 12.5, 2, 0.6);
+      const lift1 = L.block(15, 10, 2, 0.6);
+      L.block(22, 8, 2, 0.6);
+      const lift2 = L.block(25, 8.5, 1.5, 0.6);
+      const top = L.block(27.5, 4, 4.5, 1);
+      const fake = L.door(29.5, 4, { fake: true });
+      const shuttle = (b, x2, y2, speed) => {
+        const a = [b.x, b.y], z = [x2, y2];
+        let to = z;
+        L.moveBlock(b, to[0], to[1], speed);
+        L.on(() => b.x === to[0] && b.y === to[1], () => { to = to === z ? a : z; L.moveBlock(b, to[0], to[1], speed); }, { repeat: true });
+      };
+      shuttle(lift1, 19.5, 10, 3);
+      shuttle(lift2, 25, 5, 2.5);
+      // two saws orbiting the platform route in opposite directions
+      const orbit = (cx, cy, r, w) => {
+        const s = L.saw(cx, cy, 0.7);
+        L.on(() => true, () => { s.x = cx + r * Math.cos(L.t * w); s.y = cy + r * Math.sin(L.t * w); }, { repeat: true });
+      };
+      orbit(18, 7.5, 2.4, 1.6);
+      orbit(24.5, 4.5, 1.8, -2.1);
+      // hidden spikes pop wherever your jump is headed to land
+      const traps = [[12, 12.5], [13, 12.5], [22, 8], [23, 8], [28, 4], [31, 4]].map(([x, y]) => L.spike(x, y, 1, 'up', { hidden: true }));
+      L.onJump((p) => {
+        const tx = L.px + p.vx * 0.6;
+        const s = traps.filter((t) => t.target === 0 && t.y > L.py && Math.abs(t.x + 0.5 - tx) < 1)
+          .sort((a, b) => Math.abs(a.x + 0.5 - tx) - Math.abs(b.x + 0.5 - tx))[0];
+        if (s) s.pop();
+      });
+      // the first one also pops when you just stand on its tile
+      L.on(() => L.player.ground === step && L.player.x < 13 && L.player.x + L.player.w > 12, () => traps[0].pop());
+      L.on(() => L.touch(fake), () => {
+        L.fakeWin();
+        L.wait(0.9, () => { L.drop(top, 0); L.banner = { text: 'NOPE', sub: '', t: 0 }; });
+      });
+    },
+  },
+  {
+    // three-floor zigzag: 5x speed zones with timed lasers, a normal-speed platform hop,
+    // then a corridor whose spikes chase you, and a pop-up spike right before the portal
+    name: 'Gotta Go Fast',
+    build(L) {
+      L.spawn(1.5, 16);
+      L.text(0.4, 2.6, 'Gotta go fast.');
+      // floor 1 (y 12-16), runs right, 5x until x 24
+      L.block(0, 16, 32, 2);
+      L.laser(6.85, 12, 0.3, 4, { on: 0.8, off: 0.8 });
+      L.spike(11, 16, 6, 'up');
+      L.laser(22.85, 12, 0.3, 4, { on: 0.8, off: 0.8, phase: 0.4 });
+      L.block(28.5, 13.5, 3.5, 0.5);
+      // floor 2 (y 6-11), runs left: normal-speed platforms over spikes, then 5x from x 12 to 4.5
+      L.block(0, 11, 27, 1);
+      L.spike(14, 11, 10, 'up');
+      L.block(21, 9.5, 1.5, 0.5);
+      L.block(16.5, 9.5, 1.5, 0.5);
+      L.laser(19.35, 6, 0.3, 5, { on: 1.1, off: 1.1 });
+      L.spike(9, 11, 1, 'up');
+      L.laser(6.35, 6, 0.3, 5, { on: 0.7, off: 0.7, phase: 0.35 });
+      L.block(1, 8, 2, 0.5);
+      // floor 3 (y 0-5): a crawl-height corridor, then the portal
+      L.block(4, 5, 28, 1);
+      L.block(7, 0, 21, 3.6);
+      L.door(30.8, 5);
+
+      const fast = () => (L.py > 12 && L.px < 24) || (L.py > 6 && L.py < 11 && L.px > 4.5 && L.px < 12);
+      L.on(() => fast() !== (L.speedMul > 1), () => {
+        L.speedMul = fast() ? 5 : 1;
+        L.say(L.speedMul > 1 ? '5x SPEED' : 'normal');
+        L.player.vx = Math.max(-8, Math.min(8, L.player.vx)); // don't keep 5x momentum
+      }, { repeat: true });
+
+      // corridor spikes rise behind you at just under full run speed
+      const chase = [];
+      for (let x = 7; x < 28; x++) chase.push(L.spike(x, 5, 1, 'up', { hidden: true }));
+      L.on(() => L.py < 5 && L.px > 8, () => {
+        const t0 = L.t;
+        L.on(() => true, () => { const front = 7 + (L.t - t0) * 7.2; for (const s of chase) if (s.x + 1 <= front) s.pop(); }, { repeat: true });
+      });
+      const last = L.spike(29.5, 5, 1, 'up', { hidden: true });
+      L.on(() => L.py < 5 && L.px > 27.5, () => last.pop());
+    },
+  },
+  {
+    // three-tier zigzag with a laser rising from below. tiers 1 and 3: the free gaps between spike
+    // strips grow spikes when you jump at them; some visible strips are fake and are the only footing.
+    // tier 2: spiked crushers, then half-buried saws that lunge to where your jump would land.
+    // tier 3 also has a double fake (fake spikes on a fake floor); the portal jump inverts controls.
+    name: 'Floor Is Lava',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(1, 1.6, 'The floor is lava.');
+      L.text(7, 12.6, 'Just jump through the gaps.');
+      L.spike(0, 18, 32, 'up');
+      // the "lava": a full-width laser that rises through the whole level
+      const lava = L.laser(0, 18.5, 32, 0.3, { on: 1e9, off: 1 });
+      L.on(() => true, () => { lava.y = Math.max(-1, 18.5 - Math.max(0, L.t - 1.5) * 0.85); }, { repeat: true });
+      // a clean-looking gap whose spikes pop as soon as you jump at it (only on the tier above floorY).
+      // the popped spikes sit 0.2 in from each side so they never visually merge with a fake strip.
+      const gap = (x, floorY, w = 1) => {
+        const g = L.spike(x + 0.2, floorY, w - 0.4, 'up', { hidden: true });
+        L.on(() => !L.player.grounded && L.py < floorY && L.py > floorY - 4 && L.px > x - 0.3 && L.px < x + w + 0.3, () => g.pop());
+      };
+      // tier 1 (surface y 15), heading right: [gap][FAKE][gap][real][gap][FAKE][gap][real]
+      L.block(0, 15, 5, 1);
+      L.block(7, 15, 11, 1);
+      gap(7, 15, 2);
+      L.spike(9, 15, 2, 'up', { fake: true });
+      gap(11, 15, 1.2);
+      L.spike(12.2, 15, 1, 'up');
+      gap(13.2, 15);
+      L.spike(14.2, 15, 2, 'up', { fake: true });
+      gap(16.2, 15);
+      L.spike(17.2, 15, 0.8, 'up');
+      L.block(20, 15, 6, 1);
+      L.block(28.5, 12.25, 3.5, 0.5);                    // step up to tier 2
+      // tier 2 (surface y 9.5), heading left
+      L.block(3, 9.5, 24, 1);
+      // spiked crushers: a solid block with a spike row on its underside
+      const crusher = (x, ph) => {
+        const c = L.block(x, 5, 2, 2);
+        const s = L.spike(x, 7, 2, 'down');
+        // open() runs every frame, even during the death animation, so the spikes stay attached
+        L.gate(c, 0, 2.02, () => { s.y = c.y + c.h; return (L.t + ph) % 1.8 < 0.6; }, { speed: 22, closeSpeed: 6 });
+      };
+      crusher(21, 0);
+      crusher(16, 0.43);   // slams just as someone who was blocked by the first one runs under it
+      // saws, half-buried. each patrols lo..hi at a speed that keeps surging and dragging.
+      // the two floor saws also guard a stretch of floor (glo..ghi): when you jump, a saw lunges to
+      // wherever that jump would land, then stalls for a breather. so jump long, steer back mid-air
+      // to land short of it, then hop over it while it stalls.
+      const saws = [
+        { s: L.saw(13, 9.5, 0.7, { buried: true }), lo: 11, hi: 13, glo: 10.5, ghi: 13.5, f: 1.7, ph: 0 },
+        { s: L.saw(5, 9.5, 0.7, { buried: true }), lo: 5, hi: 7, glo: 4.5, ghi: 7.5, f: 2.3, ph: 1.3 },
+        { s: L.saw(18.7, 5, 0.6, { buried: true }), lo: 18.7, hi: 20.3, f: 1.3, ph: 0.6 },
+        { s: L.saw(24.7, 5, 0.6, { buried: true }), lo: 24.7, hi: 27.3, f: 2.9, ph: 2.1 },
+      ];
+      for (const n of saws) { n.dir = -1; n.goal = null; n.rest = 0; }
+      L.onJump((p) => {
+        if (L.py < 5 || L.py > 9.5) return;
+        const land = L.px + p.vx * 0.66;
+        for (const n of saws) {
+          if (n.glo === undefined || n.goal !== null || L.t < n.rest || land < n.glo - 1.5 || land > n.ghi + 1.5) continue;
+          n.goal = Math.max(n.glo, Math.min(n.ghi, land));
+        }
+      });
+      // timers keep running during the death animation (triggers don't), so the saws never drift off
+      const tick = () => {
+        for (const n of saws) {
+          const s = n.s;
+          if (n.goal !== null) {
+            const d = n.goal - s.x;
+            s.vx = Math.sign(d) * Math.min(9, Math.abs(d) * 20);
+            if (Math.abs(d) < 0.05) { s.x = n.goal; s.vx = 0; n.goal = null; n.rest = L.t + 1.5; }
+          } else if (L.t < n.rest) s.vx = 0;
+          else {
+            if (s.x <= n.lo) n.dir = 1;
+            if (s.x >= n.hi) n.dir = -1;
+            s.vx = n.dir * (0.6 + 4.4 * Math.sin(L.t * n.f + n.ph) ** 2);
+          }
+        }
+        L.wait(0, tick);
+      };
+      tick();
+      L.block(0, 6.75, 2.2, 0.5);                        // step up to tier 3
+      // tier 3 (surface y 4), heading right: [real][gap][FAKE][gap][DOUBLE FAKE][gap][FAKE][gap]
+      L.block(4, 4, 7.5, 1);
+      L.spike(6.5, 4, 1, 'up');
+      gap(7.5, 4);
+      L.spike(8.5, 4, 2, 'up', { fake: true });
+      gap(10.5, 4);
+      L.block(11.5, 4, 1.5, 1, { solid: false });        // double fake: fake spikes on a fake floor
+      L.spike(11.5, 4, 1.5, 'up', { fake: true });
+      L.block(13, 4, 15, 1);
+      gap(13, 4);
+      L.spike(14, 4, 2, 'up', { fake: true });
+      gap(16, 4);
+      // one last real strip in front of the portal. jumping it inverts your controls, so holding
+      // right drifts you back to before the strip, and spikes pop up right where you land.
+      L.spike(22, 4, 1.5, 'up');
+      L.door(26, 4);
+      const back = L.spike(18, 4, 3.5, 'up', { hidden: true });
+      L.onJump(() => { if (L.py < 4 && L.px > 19) L.invert = true; });
+      L.on(() => L.invert && L.player.grounded && L.py < 4 && L.px < 22, () => back.pop());
+    },
+  },
+  {
+    // spike ceiling: a full jump kills, you have to tap. the exit is a lie: the portal is fake and
+    // the landing grows spikes. the ceiling spikes over the floor gap (x 19-22) are fake: a full jump
+    // there turns the ceiling see-through, shrinks you, and drops a ladder into a secret two-floor
+    // room. lower floor heading left (slot only a tiny player fits, pad up, tap over a roof spike,
+    // pad down), then a pad by the wall throws you to the upper floor, ceiling-walk right to the portal.
+    name: 'Short Hop',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Tap. Don\'t hold.');
+      L.block(0, 15, 32, 3);
+      const ceil = L.block(7, 0, 18, 11);
+      L.spike(7, 11, 12, 'down');
+      const fakeTop = L.spike(19, 11, 3, 'down', { fake: true });
+      // the usual hidden-block shimmer among the fake spikes, right where the ladder will drop in
+      const marker = L.block(20, 11, 1.5, 0.6, { hidden: true, solid: false });
+      L.spike(22, 11, 3, 'down');
+      L.spike(10, 15, 1, 'up');
+      L.spike(14, 15, 1, 'up');
+      L.spike(18, 15, 2, 'up');
+      L.spike(21.5, 15, 1, 'up');
+      const s = L.spike(25.5, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 23.8, () => s.pop());
+      L.door(29.5, 15, { fake: true });
+      const land = L.spike(26.6, 15, 5.4, 'up', { hidden: true });
+      L.onJump(() => { if (L.px > 23 && L.py > 12) land.pop(); });
+      L.on(() => L.player.y < 11.6 && L.px > 19 && L.px < 22, () => {
+        ceil.solid = false; ceil.ghost = true; fakeTop.hide(); marker.gone = true;
+        const p = L.player;   // shrink to half size, feet and centre stay put
+        p.x += p.w / 4; p.y += p.h / 2; p.w /= 2; p.h /= 2;
+        L.say('tiny!'); L.shake(0.2, 0.2);
+        L.ladder(20, 10.5, 1.5, 4.5);
+        L.block(7, 0, 18, 1.5);                          // ceiling
+        L.block(7, 1.5, 0.5, 9);                         // left wall
+        L.block(24.5, 1.5, 0.5, 9);                      // right wall
+        L.block(9, 6, 15.5, 0.5);                        // divider (open at x 7.5-9)
+        L.block(7, 10.5, 13, 0.5);                       // lower floor, ladder hole at x 20-21.5
+        L.block(21.5, 10.5, 3, 0.5);
+        L.block(16.5, 6.5, 1.5, 3.4);                    // 0.6-tall slot: tiny players only
+        L.pad(14, 10.5, 1, -1);
+        L.spike(9, 10.5, 5, 'up');
+        L.spike(11, 6.5, 1, 'down');                     // on the divider's underside: tap, a full hop hits the floor spikes
+        L.pad(9, 6.5, 1, 1);
+        L.pad(7.5, 10.5, 1, -1);
+        L.spike(12, 1.5, 1, 'down');
+        L.spike(18, 1.5, 1, 'down');
+        L.door(22.5, 3.1);                               // hangs from the ceiling
+      });
+    },
+  },
+  {
+    // "Nothing Here", backwards. walking is safe and jumping kills... until the last obstacle, a real
+    // spike strip you have to jump. then the portal runs back to the start, the strip retracts,
+    // fresh (fake) spikes rise for the walk back, and jumping kills again.
+    name: 'Nothing Here',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Just walk. Seriously.');
+      L.text(12, 7, 'jump for a surprise');
+      L.block(0, 15, 14, 3);
+      L.block(14, 15, 3, 3, { hidden: true });               // the "pit" has an invisible floor
+      L.block(17, 15, 15, 3);
+      L.spike(0, 18, 32, 'up');
+      L.spike(6, 15, 1.5, 'up', { fake: true });
+      L.spike(20, 15, 1, 'up', { fake: true });
+      const crusher = L.block(2.5, 8, 2, 3);
+      L.drop(crusher, 1e9);                                  // shakes forever, never falls
+      for (const [lo, hi, f] of [[8, 12, 1.1], [18, 23, 1.7]]) {
+        const saw = L.saw(lo, 12.6, 0.7);
+        L.on(() => true, () => { saw.x = lo + (hi - lo) * (0.5 + 0.5 * Math.sin(L.t * f)); }, { repeat: true });
+      }
+      // the one jump you need: a real strip right before the portal
+      const real = L.spike(26.5, 15, 1, 'up');
+      const door = L.door(29.5, 15);
+      let back = false;
+      const floor = L.spike(0, 15, 32, 'up', { hidden: true });
+      L.onJump(() => { if (back || L.px < 24) L.wait(0.3, () => { floor.pop(); L.say('told you'); }); });
+      L.on(() => L.px > 27.3, () => {
+        back = true;
+        L.moveDoor(door, 1.2, 15, 40);
+        real.hide();
+        for (const [x, w] of [[3, 1.5], [10, 1], [22, 1.5]]) L.spike(x, 15, w, 'up', { fake: true, hidden: true }).pop();
+      });
+    },
+  },
+  {
+    // red light, green light over a two-tier parkour run. every light lasts at least 1.2 s.
+    // halfway up the rules flip: move on RED, freeze on GREEN. the saw only moves while you're
+    // frozen, and the crumbling bridge drops you if a light catches you standing on it.
+    name: 'Red Light',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 2.6, 'Move on GREEN. Freeze on RED.');
+      L.spike(0, 18, 32, 'up');
+      // tier 1 (y 15), heading right
+      L.block(0, 15, 6, 1);
+      L.block(8, 15, 6, 1);
+      L.spike(11.5, 15, 1, 'up');
+      L.block(16, 15, 8, 1);
+      L.block(25, 12.5, 2, 0.5);
+      L.block(28, 10, 4, 1);
+      // tier 2 (y 7.5), heading left
+      L.block(17, 7.5, 10, 1);
+      L.spike(21, 7.5, 1, 'up');
+      for (let x = 9; x < 14; x++) L.block(x, 7.5, 1, 1, { crumble: 0.3, fall: 2.5 });
+      L.block(4, 7.5, 5, 1);
+      L.block(0.5, 5, 3, 1);
+      L.door(1.2, 5);
+
+      // the lights. L.go is the colour you may move on; L.lightEnds is when the current light changes
+      L.go = 'green';
+      const greens = [1.6, 1.3, 2.0, 1.4, 1.8], reds = [1.3, 1.6, 1.2, 1.5];
+      let since = 0, n = 0;
+      const cycle = (c) => {
+        const d = c === 'green' ? greens[n % greens.length] : reds[n++ % reds.length];
+        L.light = c; since = L.t; L.lightEnds = L.t + d;
+        L.banner = { text: c === 'green' ? 'GREEN LIGHT' : 'RED LIGHT', sub: '', t: 0, life: 0.8 };
+        L.wait(d, () => cycle(c === 'green' ? 'red' : 'green'));
+      };
+      cycle('red');
+      L.on(() => L.py < 7.6 && L.px < 27.2, () => { L.go = 'red'; since = L.t; });
+      L.on(() => L.light !== L.go && L.t - since > 0.3 && Math.abs(L.player.vx) > 0.5, () => {
+        L.say('I SAW THAT'); L.kill(L.player, 'red light');
+      });
+      // a half-buried saw that only moves while you're frozen
+      const saw = L.saw(20, 15, 0.7, { buried: true });
+      let dir = 1;
+      L.on(() => true, () => {
+        if (saw.x >= 22) dir = -1;
+        if (saw.x <= 18) dir = 1;
+        saw.vx = L.light !== L.go ? dir * 3 : 0;
+      }, { repeat: true });
+    },
+  },
+  {
+    // three rides, three betrayals: the lift stops short and drops, the shuttle turns back halfway,
+    // and the portal on the top ledge is a fake that kills you. the real way on is the last lift:
+    // ride it "into" the ceiling spikes (fake too) up to a bonus room where you must trust the platform.
+    name: 'Elevator Pitch',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 5, 'Take the lift. It\'s safe.');
+      L.spike(0, 18, 32, 'up');
+      L.block(0, 15, 6, 3);
+      const lift = L.block(6.5, 15, 2.5, 0.5, { fall: 2.5 });
+      L.block(11, 6, 5, 1);                                  // ledge A
+      const shuttle = L.block(16.5, 6, 2.5, 0.5);
+      L.block(25, 6, 4.5, 1);                                // ledge B
+      const lift2 = L.block(29.5, 6, 2.5, 0.5);
+      L.block(28.5, -0.5, 3.5, 0.7, { solid: false });       // the ceiling over the last lift... isn't
+      L.spike(28.5, 0.2, 3.5, 'down', { fake: true });
+      L.block(27, 2.5, 2.3, 1);                              // ledge C, with the fake portal
+      const fakeDoor = L.door(27.2, 2.5, { fake: true });
+      const ledgeTrap = L.spike(27, 2.5, 2.3, 'up', { hidden: true });
+      L.on(() => L.touch(fakeDoor), () => { ledgeTrap.pop(); L.banner = { text: 'FAKE', sub: '', t: 0, life: 1.6 }; });
+      // ride 1: stops short, shakes, drops
+      L.on(() => L.player.ground === lift, () => { L.moveBlock(lift, 6.5, 8.5, 3); L.say('going up!'); });
+      L.on(() => lift.y <= 8.501, () => { L.say('brb'); L.drop(lift, 0.3); });
+      const s1 = L.spike(13.5, 6, 1, 'up', { hidden: true });
+      L.on(() => L.py < 6 && L.px > 12 && L.px < 16, () => s1.pop());
+      // ride 2: the shuttle heads right, then remembers it forgot something
+      L.on(() => L.player.ground === shuttle, () => { L.moveBlock(shuttle, 21, 6, 3.5); L.say('all aboard'); });
+      L.on(() => shuttle.x >= 20, () => {
+        L.say('oops, forgot something');
+        L.wait(0.45, () => L.moveBlock(shuttle, 16.5, 6, 9));
+      });
+      // ride 3: stops level with the fake portal's ledge and shakes like ride 1 did (step off!)... then
+      // carries on straight up through the ceiling
+      L.on(() => L.player.ground === lift2, () => { L.moveBlock(lift2, 29.5, 2.5, 2.5); L.say('top floor!'); });
+      L.on(() => lift2.y <= 2.501, () => {
+        lift2.pending = true; lift2.shakeT = 99; L.say('brb');
+        L.wait(0.6, () => { lift2.pending = false; L.moveBlock(lift2, 29.5, -2, 2.5); });
+      });
+      L.on(() => L.py < 0.3, () => bonus(L));
+    },
+  },
+  {
+    // the course changes every death: the floor trap, the trap that punishes jumping, and which
+    // of the two portals is real all swap sides. a saw bobs up and down in the pit.
+    name: 'Deja Vu',
+    build(L) {
+      const odd = L.deaths % 2 === 1;
+      const trapX = odd ? 22 : 9, roofX = odd ? 9 : 22;
+      L.spawn(2, 15);
+      L.text(3, 5, L.deaths ? 'Same as last time. Promise.' : 'Nothing new here.');
+      L.spike(0, 18, 32, 'up');
+      L.block(0, 15, 14.5, 3);
+      L.block(16, 15, 16, 3);
+      // two identical low ceilings. over the jump trap it's real and hangs just above your head, so
+      // even a small hop meets its spikes; over the floor trap it's a ghost you can jump through
+      L.block(7.5, 11.92, 4, 1, { solid: roofX === 9 });
+      L.block(20.5, 11.92, 4, 1, { solid: roofX === 22 });
+      const s = L.spike(trapX, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > trapX - 2.4, () => s.pop());
+      const roof = L.spike(roofX - 1.5, 12.92, 4, 'down', { hidden: true });
+      L.on(() => !L.player.grounded && L.py > 11.9 && L.px > roofX - 1.5 && L.px < roofX + 2.5, () => { roof.pop(); L.say('why jump?'); });
+      // the pit saw
+      const saw = L.saw(15.25, 14, 0.7);
+      L.on(() => true, () => { saw.y = 14 + 3 * Math.sin(L.t * 2.4); }, { repeat: true });
+      // two portals, one above the other; the real one swaps with every death. the fake one kills:
+      // the low one pops spikes under you, the high one drops you onto a spiked shelf
+      L.block(27, 13, 2, 0.5);
+      const top = L.block(29.5, 10, 2.5, 1, { fall: 2.5 });
+      const high = L.door(30.5, 10, { fake: odd });
+      const low = L.door(30.5, 15, { fake: !odd });
+      const floorSpikes = L.spike(28.5, 15, 3.5, 'up', { hidden: true });
+      const fake = odd ? high : low;
+      L.on(() => L.touch(fake), () => {
+        L.banner = { text: 'Trolled lol', sub: '', t: 0, color: '#ff3b5c' };
+        if (fake === low) floorSpikes.pop();
+        else { L.drop(top, 0); L.block(29.5, 12.6, 2.5, 0.4); L.spike(29.5, 12.6, 2.5, 'up'); }
+      });
+    },
+  },
+  {
+    // a four-floor ladder maze, shown for 2 seconds, then lights out. ✕ tiles send you back to the start.
+    name: 'Lights Out',
+    build(L) {
+      L.spawn(1.5, 15);
+      L.block(0, -1, 32, 1);                                 // ceiling
+      L.block(0, 15, 32, 3);                                 // floor 0
+      // floors 1-3, each with a ladder opening and a hole that drops you back down
+      const floor = (y, gaps) => {
+        let x = 0;
+        for (const [a, b] of gaps) { if (a > x) L.block(x, y, a - x, 1); x = b; }
+        if (x < 32) L.block(x, y, 32 - x, 1);
+      };
+      floor(11, [[12, 13.5], [28, 29.5]]);
+      floor(7, [[3, 4.5], [14, 15.5]]);
+      floor(3, [[10, 11.5], [27.5, 29]]);
+      L.ladder(28.2, 10.5, 1.1, 4.5);                        // floor 0 -> 1
+      L.ladder(3.2, 6.5, 1.1, 4.5);                          // floor 1 -> 2
+      L.ladder(27.7, 2.5, 1.1, 4.5);                         // floor 2 -> 3
+      // low walls to hop
+      L.block(9, 13.8, 0.6, 1.2);
+      L.block(24, 9.8, 0.6, 1.2);
+      L.block(9, 5.8, 0.6, 1.2);
+      L.block(21, 1.8, 0.6, 1.2);
+      L.door(2, 3);
+      // teleport tiles: on the route and at the end of each dead end
+      const start = { x: 1.5 - 0.4, y: 15 };
+      for (const [x, y] of [[18, 15], [30.5, 15], [20, 11], [20, 7], [1, 7], [16, 3], [30.5, 3]]) {
+        L.text(x + 0.12, y - 0.35, '✕');
+        L.on(() => L.player.grounded && Math.abs(L.player.y + L.player.h - y) < 0.05 && L.player.x < x + 1 && L.player.x + L.player.w > x, () => {
+          const p = L.player;
+          p.x = start.x; p.y = start.y - p.h; p.vx = 0; p.vy = 0;
+          L.say('back to start!'); L.shake(0.2, 0.2);
+        }, { repeat: true });
+      }
+      L.banner = { text: "DON'T BLINK", sub: '', t: 0, life: 1.8 };
+      L.wait(2, () => lightsOut(L, 1.5));
+    },
+  },
+  {
+    // the finale, three rooms, every trick from 21-29. room A: red light/green light over fake-spike
+    // footholds; the way on is the pit. room B: lights out with a rising laser, a spike ceiling,
+    // a 5x speed zone, teleport tiles and ladders. room C: jump for the portal by the start; the long
+    // ride past it ends at a fake, behind a jump that inverts your controls (when depends on deaths).
+    name: 'The Undoing',
+    build(L) {
+      L.spawn(2, 15);
+      L.room = 'A';
+      L.text(3, 2.6, 'This is where it ends.');
+      L.spike(0, 18, 32, 'up');
+      const gap = (x, floorY, w = 1) => {
+        const g = L.spike(x + 0.2, floorY, w - 0.4, 'up', { hidden: true });
+        L.on(() => !L.player.grounded && L.py < floorY && L.py > floorY - 4 && L.px > x - 0.3 && L.px < x + w + 0.3, () => g.pop());
+      };
+      L.block(0, 15, 5, 1);
+      L.block(7, 15, 11, 1);
+      gap(7, 15, 2);
+      L.spike(9, 15, 2, 'up', { fake: true });
+      gap(11, 15, 1.2);
+      L.spike(12.2, 15, 1, 'up');
+      gap(13.2, 15);
+      L.spike(14.2, 15, 2, 'up', { fake: true });
+      gap(16.2, 15);
+      L.spike(17.2, 15, 0.8, 'up');
+      L.block(20, 15, 6, 1);
+      L.block(28.5, 15, 3.5, 3);
+      // the obvious way on is a fake
+      L.block(28.5, 12.5, 3.5, 0.5);
+      const decoy = L.door(29.8, 12.5, { fake: true });
+      const decoyTrap = L.spike(28.5, 12.5, 3.5, 'up', { hidden: true });
+      L.on(() => L.touch(decoy), () => { decoyTrap.pop(); L.banner = { text: 'FAKE', sub: '', t: 0, life: 1.4 }; });
+      // red light, green light (each light lasts 1.2-2 s)
+      L.go = 'green';
+      const greens = [1.6, 1.3, 2.0, 1.4, 1.8], reds = [1.3, 1.6, 1.2, 1.5];
+      let since = 0, n = 0;
+      const cycle = (c) => {
+        const d = c === 'green' ? greens[n % greens.length] : reds[n++ % reds.length];
+        L.light = c; since = L.t; L.lightEnds = L.t + d;
+        L.banner = { text: c === 'green' ? 'GREEN LIGHT' : 'RED LIGHT', sub: '', t: 0, life: 0.8 };
+        L.wait(d, () => cycle(c === 'green' ? 'red' : 'green'));
+      };
+      cycle('red');
+      L.on(() => L.light !== L.go && L.t - since > 0.3 && Math.abs(L.player.vx) > 0.5, () => { L.say('I SAW THAT'); L.kill(L.player, 'red light'); });
+      L.on(() => L.py > 16 && L.px > 26 && L.px < 28.5, () => undoingB(L));
     },
   },
 ];

@@ -15,6 +15,75 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
     const R = window.__ragebait;
     // ---- single-player policies: (L, k, st) => sets k.left/right, returns true to press jump
     const J = (st, name, c) => { if (c && !st[name]) { st[name] = 1; return true; } return false; };
+    // Hop runner for the long single-player levels. H is a list of hops; each one walks to `prep` (or
+    // just stops, with stop: 1, on narrow footholds), waits for ok(L), runs in direction d (0 = jump in
+    // place), then at `at` (a number, or a function of L) either jumps (holding jump for `hold` steps, default a full jump) or, with
+    // walk: 1, moves on to the next hop. In the air it steers toward `to`, once above `upTo` (ladders).
+    // o.pause(L): while grounded and true, stand still and wait.
+    const hopper = (H, o = {}) => (L, k, st) => {
+      const p = L.player; st.i = st.i || 0; const h = H[st.i];
+      if (!h) return false;
+      const press = (d) => { if ((d > 0) !== L.invert) k.right = 1; else k.left = 1; };
+      const next = () => { st.i++; st.ready = 0; st.air = 0; };
+      if (st.air) {
+        if (p.grounded && L.t > st.air) next();
+        else if (h.to !== undefined && (h.upTo === undefined || L.py < h.upTo) && (h.to - L.px) * h.d > 0.3) press(h.d);
+        return false;
+      }
+      if (o.pause && p.grounded && o.pause(L)) return false;
+      if ((h.prep !== undefined || h.stop) && !st.ready) {
+        if (!h.stop && Math.abs(L.px - h.prep) > 0.12) press(Math.sign(h.prep - L.px));
+        else if (Math.abs(p.vx) < 0.3 && (!h.ok || h.ok(L))) st.ready = 1;
+        return false;
+      }
+      if (h.d) press(h.d);
+      const at = typeof h.at === 'function' ? h.at(L) : h.at;
+      if ((!h.d || (L.px - at) * h.d >= 0) && p.grounded) {
+        if (h.walk) { next(); return false; }
+        st.air = L.t + 0.05; return h.hold || true;
+      }
+      return false;
+    };
+    const crusherSafe = (L, o) => { const ph = (L.t + o) % 1.8; return ph > 1.18 && ph < 1.28; };
+    // Red Light: your colour is up, with at least `min` seconds left on it
+    const rlGo = (min) => (L) => L.light === L.go && L.lightEnds - L.t > min;
+    // Deja Vu: the pit saw is on its way down and low enough to jump over
+    const pitSafe = (L) => Math.sin(L.t * 2.4) > 0.17 && Math.cos(L.t * 2.4) > 0;
+    const dejaEven = hopper([
+      { d: 1, at: 6.7, to: 11.6 },                                          // floor spike at 9
+      { d: 1, prep: 13.6, ok: pitSafe, at: 13.8, to: 18.8 },                // pit
+      { d: 1, at: 25.2, to: 28 },                                           // step (take off before its edge)
+      { d: 1, prep: 27.4, at: 27.4, to: 31.1 },                             // platform: the high portal is real
+    ]);
+    const dejaOdd = hopper([
+      { d: 1, prep: 13.6, ok: pitSafe, at: 13.8, to: 18.6 },                // pit (no jumping near 9: roof trap)
+      { d: 1, at: 19.7, to: 25.0 },                                         // floor spike at 22
+      { d: 1, at: 30.8, walk: 1 },                                          // the low portal is real
+    ]);
+    // The Undoing, room by room. room B's laser in the 5x zone is off for (t % 1.6) in [0.8, 1.6)
+    const undoing = {
+      A: hopper([
+        { d: 1, prep: 4.5, ok: rlGo(1.0), at: 4.8, to: 10.0 },             // onto the first fake strip
+        { d: 1, stop: 1, ok: rlGo(1.0), at: 10.5, to: 14.6 },              // second fake strip
+        { d: 1, stop: 1, ok: rlGo(1.0), at: 15.5, to: 21 },                // island
+        { d: 1, prep: 25.2, ok: rlGo(1.0), at: 27, walk: 1 },              // walk off into the pit
+      ], { pause: (L) => L.light !== L.go }),
+      B: hopper([
+        { d: 1, stop: 1, ok: (L) => L.py > 14, at: 0, walk: 1 },           // fall all the way in to floor 0 first
+        { d: 1, at: 9.0, to: 13, hold: 4 },                                // tap under the spike ceiling
+        { d: 1, prep: 13.4, ok: (L) => { const c = L.t % 1.6; return c > 0.8 && c < 1.15; }, at: 23.0, walk: 1 }, // 5x through the laser
+        { d: 1, at: 23.4, to: 27.5 },                                      // teleport tile
+        { d: -1, prep: 29.8, at: 29.8, hold: 130, upTo: 9.2, to: 27 },     // ladder up to floor 1
+        { d: -1, at: 22.3, to: 18.8 },                                     // teleport tile
+        { d: -1, at: 14.3, to: 10.8 },                                     // hole
+        { d: -1, prep: 4.7, at: 4.7, hold: 260 },                          // ladder out through the ceiling
+      ]),
+      C: hopper([
+        { d: 1, prep: 1.5, ok: (L) => L.blocks[0].y <= 9.001, at: 2.3, to: 6.4 }, // top of the rise: running jump over the saw into the near portal
+      ]),
+    };
+    // seconds left in a laser's off window (-1 while it is on)
+    const off = (l, L) => { const c = (L.t + l.phase) % (l.on + l.off); return c < l.on ? -1 : l.on + l.off - c; };
     const SINGLE = [
       // 1
       (L, k, st) => { k.right = 1; return J(st, 'a', L.px > 16.2); },
@@ -187,6 +256,124 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         // phase 5: on top block, walk right into door at x=29.5 (wait for tween to finish)
         k.right = 1; return false;
       },
+      // 21 Leap of Faith: jump the first hole into the middle one, land in the bonus room, walk to its portal
+      (L, k, st) => { k.right = 1; return J(st, 'a', L.player.grounded && L.px > 2.9); },
+      // 22 Gotta Go Fast: wait out each laser, tap-hop spikes at 5x, zigzag up three floors, outrun the corridor spikes
+      (L, k, st) => {
+        const p = L.player, las = L.lasers, g = p.grounded;
+        st.ph = st.ph || 0;
+        if (st.ph === 0) { if (off(las[0], L) > 0.5) st.ph = 1; return false; }
+        if (st.ph === 1) { k.right = L.px < 19; if (L.px > 18.5 && g) st.ph = 2; return J(st, 'a', L.px > 9.3) ? 8 : false; }
+        if (st.ph === 2) { if (off(las[1], L) > 0.4) st.ph = 3; return false; }
+        // run to the step, hop on, hop up-left onto floor 2
+        if (st.ph === 3) { k.right = 1; if (g && L.py < 13.5) st.ph = 4; return J(st, 'b', g && L.px > 26.8); }
+        if (st.ph === 4) { k.right = L.px < 30.5; if (L.px > 30.3) st.ph = 5; return false; }
+        if (st.ph === 5) { k.left = L.px > 26.8 || g; k.right = !g && L.px < 26; if (g && L.py < 11) st.ph = 6; return J(st, 'c', g && L.px < 29.4); }
+        // floor 2: onto platform 1, wait for the laser, platform 2, down to the floor
+        if (st.ph === 6) { k.left = L.px > 25.6; if (L.px < 25.7 && Math.abs(p.vx) < 0.5) st.ph = 7; return false; }
+        if (st.ph === 7) { k.left = L.px > 21.9; if (g && L.py < 9.5) st.ph = 8; return J(st, 'd', g); }
+        if (st.ph === 8) { k.right = L.px < 21.7; if (off(las[2], L) > 0.6 && Math.abs(p.vx) < 0.5) st.ph = 9; return false; }
+        if (st.ph === 9) { k.left = L.px > 17.2; if (g && L.px < 18) st.ph = 10; return J(st, 'e', g && L.px < 21.4); }
+        if (st.ph === 10) { k.left = 1; if (g && L.py > 10) st.ph = 11; return J(st, 'f', g && L.px < 17.4); }
+        if (st.ph === 11) { k.right = L.px < 12.6; if (Math.abs(p.vx) < 0.5 && off(las[3], L) > 0.45) st.ph = 12; return false; }
+        // 5x dash left: hop the spike, through the laser, then climb the step and up to floor 3
+        if (st.ph === 12) { k.left = 1; if (g && L.px < 4.5) st.ph = 13; return J(st, 'g', L.px < 11.3) ? 8 : false; }
+        if (st.ph === 13) { k.right = L.px < 3.9; if (L.px > 3.8 && Math.abs(p.vx) < 0.5) st.ph = 14; return false; }
+        if (st.ph === 14) { k.left = L.px > 2; if (g && L.py < 8) st.ph = 15; return J(st, 'h', g); }
+        if (st.ph === 15) { k.right = 1; return J(st, 'i', g) || J(st, 'j', g && L.py < 5 && L.px > 28.3); }
+        return false;
+      },
+      // 23 Floor Is Lava
+      hopper([
+        { d: 1, at: 4.6, to: 10.0 },                   // onto the first fake spikes
+        { d: 1, stop: 1, at: 10.5, to: 14.6 },         // second fake spikes
+        { d: 1, stop: 1, at: 15.5, to: 21 },           // island
+        { d: 1, at: 25.3, to: 29.5 },                  // step up
+        { d: -1, prep: 31, at: 29.2, to: 25 },         // tier 2
+        { d: -1, prep: 23.7, ok: (L) => crusherSafe(L, 0), at: 19.2, walk: 1 },   // under crusher A
+        { d: -1, prep: 19.2, ok: (L) => crusherSafe(L, 0.43), at: 15.9, walk: 1 }, // under crusher B
+        { d: -1, stop: 1, at: 15.0, to: 12.6 },        // bait: jump long (saw 1 lunges far), steer back short
+        { d: -1, stop: 1, ok: (L) => L.saws[0].vx === 0, at: 12.0, to: 9.4 }, // over stalled saw 1; baits saw 2
+        { d: -1, at: 8.1, to: 3.6 },                   // over stalled saw 2
+        { d: -1, prep: 3.4, at: 3.4, to: 1.0 },        // step up
+        { d: 1, prep: 0.6, at: 1.6, to: 5.2 },         // tier 3
+        { d: 1, prep: 5.2, at: 5.8, to: 9.5 },         // fake spikes
+        { d: 1, stop: 1, at: 9.7, to: 14.6 },          // over the double fake onto fake spikes
+        { d: 1, stop: 1, at: 15.3, to: 18.5 },
+        { d: 1, at: 21.3, to: 25.2 },                  // jump the last strip; controls invert mid-air
+        { d: 1, at: 26.6, walk: 1 },
+      ]),
+      // 24 Short Hop: tap-hop the floor spikes, full-jump into the fake ceiling spikes over the gap,
+      // climb the ladder tiny, then floor -> pad up -> tap the roof spike -> pad down (hug the wall) ->
+      // pad up -> ceiling-walk right, hopping two spikes, into the hanging portal
+      (L, k, st) => {
+        const p = L.player, g = p.grounded;
+        if (!st.ph) {
+          k.right = 1;
+          if (J(st, 'a', g && L.px > 9.0)) return 4;
+          if (J(st, 'b', g && L.px > 13.0)) return 4;
+          if (J(st, 'c', g && L.px > 16.9)) return 12;
+          if (st.c && g && L.px > 20.0) st.ph = 1;
+          return false;
+        }
+        if (st.ph === 1) { if (g && Math.abs(p.vx) < 0.05) { st.ph = 2; return true; } return false; }
+        if (st.ph === 2) { if (L.ladders.length && g) { st.ph = 3; return 400; } return false; }
+        if (st.ph === 3) { if (L.py < 10.6) k.left = 1; if (g && L.py < 10.6 && L.px < 19.5) st.ph = 4; return false; }
+        if (st.ph === 4) { if (L.g > 0) k.left = 1; else if (g) st.ph = 5; return false; }
+        if (st.ph === 5) { k.left = 1; if (L.g > 0) st.ph = 6; return J(st, 'd', g && L.px < 12.9) ? 4 : false; }
+        if (st.ph === 6) { k.left = 1; if (L.g < 0 && L.py < 6) st.ph = 7; return false; }
+        k.right = 1; return J(st, 'e', g && L.px > 10.6) || J(st, 'f', g && L.px > 16.6);
+      },
+      // 25 Nothing Here (backwards): walk, jump only the real strip, then walk back to where the portal went
+      (L, k, st) => {
+        if (st.back || L.doors[0].tween || L.doors[0].x < 20) { st.back = 1; k.left = 1; return false; }
+        k.right = 1; return J(st, 'a', L.player.grounded && L.px > 24.9);
+      },
+      // 26 Red Light: freeze whenever your colour isn't up; only start a jump with enough light left
+      hopper([
+        { d: 1, prep: 5.3, ok: rlGo(1.0), at: 5.6, to: 9.6 },               // pit
+        { d: 1, stop: 1, ok: rlGo(1.0), at: 10.6, to: 13.2 },               // spike
+        { d: 1, stop: 1, ok: rlGo(1.0), at: 13.8, to: 16.6 },               // pit
+        { d: 1, stop: 1, ok: rlGo(1.4), at: (L) => L.saws[0].x - 2.0, to: 30 }, // over the frozen saw
+        { d: 1, prep: 23.4, ok: rlGo(1.0), at: 23.8, to: 26 },              // step
+        { d: 1, stop: 1, ok: rlGo(1.0), at: 26.5, to: 29.5 },               // platform
+        { d: -1, prep: 29.2, ok: rlGo(1.0), at: 28.8, to: 25.5 },           // tier 2: the rules flip
+        { d: -1, stop: 1, ok: rlGo(1.0), at: 23.0, to: 19.5 },              // spike
+        { d: -1, stop: 1, ok: rlGo(1.35), at: 17.6, to: 12.8 },             // pit, onto the crumbling bridge
+        { d: -1, at: 8.6, walk: 1 },                                        // across it in the same light
+        { d: -1, stop: 1, ok: rlGo(1.0), at: 4.5, to: 1.8 },                // up to the portal
+      ], { pause: (L) => L.light !== L.go }),
+      // 27 Elevator Pitch: jump off the first two rides at the right moment, never off the last one
+      hopper([
+        { d: 1, at: 8.4, walk: 1 },                                         // onto lift 1, right edge
+        { d: 1, stop: 1, ok: (L) => L.blocks[1].y <= 8.501, at: 0, to: 12.4 }, // off while it hesitates
+        { d: 1, stop: 1, at: 12.6, to: 15.2 },                              // over the ledge spike
+        { d: 1, at: 17.6, walk: 1 },                                        // onto the shuttle
+        { d: 1, stop: 1, ok: (L) => L.blocks[3].x >= 20, at: 0, to: 27 },  // off before it turns back
+        { d: 1, at: 30.6, walk: 1 },                                        // onto lift 2, and stay on it:
+      ]),                                                                   // through the fake ceiling and the bonus room
+      // 28 Deja Vu: the layout depends on the death count; cross the pit while its saw is low
+      (L, k, st) => (L.deaths % 2 ? dejaOdd : dejaEven)(L, k, st),
+      // 29 Lights Out: the maze route (floor 0 right, 1 left, 2 right, 3 left), hopping walls, holes and teleport tiles
+      hopper([
+        { d: 1, at: 7.6, to: 11 },                                          // wall
+        { d: 1, at: 17.0, to: 20.5 },                                       // teleport tile
+        { d: -1, prep: 28.75, at: 28.75, hold: 130, upTo: 10.3, to: 26 },   // ladder up to floor 1
+        { d: -1, at: 25.6, to: 22.6 },                                      // wall
+        { d: -1, at: 22.3, to: 19.2 },                                      // teleport tile
+        { d: -1, at: 14.3, to: 11.0 },                                      // hole
+        { d: 1, prep: 3.75, at: 3.75, hold: 130, upTo: 6.3, to: 6 },        // ladder up to floor 2
+        { d: 1, at: 7.6, to: 10.8 },                                        // wall
+        { d: 1, at: 13.2, to: 16.4 },                                       // hole
+        { d: 1, at: 18.8, to: 21.6 },                                       // teleport tile
+        { d: -1, prep: 28.25, at: 28.25, hold: 130, upTo: 2.3, to: 26 },    // ladder up to floor 3
+        { d: -1, at: 22.6, to: 19.6 },                                      // wall
+        { d: -1, at: 18.2, to: 15.0 },                                      // teleport tile
+        { d: -1, at: 12.4, to: 9.2 },                                       // hole
+        { d: -1, at: 2.6, walk: 1 },                                        // portal
+      ]),
+      // 30 The Undoing: one hop list per room
+      (L, k, st) => { const r = L.room; st[r] = st[r] || {}; return undoing[r](L, k, st[r]); },
     ];
 
     // ---- two-player policies: (L, A, B, st). A = player 1, B = player 2.
@@ -553,14 +740,15 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
     const runSingle = (i) => {
       R.load(i, 'single');
       const k = R.keys; const st = {};
-      for (let n = 0; n < 120 * 25; n++) {
+      for (let n = 0; n < 120 * 40; n++) {
         const L = R.game.level;
         if (L.over) return `DEAD at px=${L.px.toFixed(2)} py=${L.py.toFixed(2)}`;
         if (L.won) return `won t=${L.t.toFixed(2)}`;
         k.left = 0; k.right = 0;
         const j = SINGLE[i](L, k, st);
         k.left = !!k.left; k.right = !!k.right;
-        if (j) { k.jump = true; R.pressed.add('jump'); st.hold = 60; }
+        // a policy returns true for a full jump, or a step count for a short tap
+        if (j) { k.jump = true; R.pressed.add('jump'); st.hold = j === true ? 60 : j; }
         if (st.hold > 0) { st.hold--; k.jump = true; } else k.jump = false;
         L.step(R.STEP);
       }
@@ -598,6 +786,13 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
     const want = (c, i) => (!onlyCourse || onlyCourse === c) && (!onlyLevel || +onlyLevel === i + 1);
     const names = (m) => window.LEVELS[m];
     SINGLE.forEach((_, i) => want('single', i) && out.push(`[single] ${i + 1} ${names('single')[i].name}: ${runSingle(i)}`));
+    // levels that change with the death count: also prove their odd-death layout
+    for (const i of [27, 29]) {
+      if (!want('single', i)) continue;
+      R.save.levelDeaths[String(i)] = 1;
+      out.push(`[single] ${i + 1} ${names('single')[i].name} (after a death): ${runSingle(i)}`);
+      delete R.save.levelDeaths[String(i)];
+    }
     MULTI.forEach((pol, i) => want('multi', i) && out.push(`[multi] ${i + 1} ${names('multi')[i].name}: ${runDuo('multi', i, pol)}`));
     SPECIAL.forEach((pol, i) => want('special', i) && out.push(`[special] ${i + 1} ${names('special')[i].name}: ${runDuo('special', i, pol)}`));
     return out;
