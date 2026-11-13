@@ -336,20 +336,22 @@ const SINGLE = [
     name: 'Thin Ice',
     build(L) {
       L.spawn(2, 15);
-      L.text(3, 6, 'One step per tile. No second chances.');
+      L.text(3, 6, 'Keep moving. Ice won\'t hold forever.');
       L.block(0, 15, 4, 3);
-      // very fast-crumble bridge
-      for (let x = 4; x < 28; x++) L.block(x, 15, 1, 1, { crumble: 0.05 });
-      L.block(28, 15, 4, 3);
+      // crumble bridge with fair reaction time and safe resting island
+      for (let x = 4; x < 14; x++) L.block(x, 15, 1, 1, { crumble: 0.16 });
+      L.block(14, 15, 2, 3); // safe island
+      for (let x = 16; x < 26; x++) L.block(x, 15, 1, 1, { crumble: 0.16 });
+      L.block(26, 15, 6, 3);
       // spikes below the bridge
-      L.block(4, 17, 24, 1);
-      L.spike(4, 17, 24, 'up');
-      // crusher comes down when player crosses halfway
-      const crusher = L.block(13, 0, 6, 8);
-      L.on(() => L.px > 15, () => L.drop(crusher, 0.1, { land: true }));
-      // moving saw across the final platform
-      const saw = L.saw(32, 14.2, 0.8);
-      L.on(() => L.px > 25, () => { saw.vx = -6; });
+      L.block(4, 17, 22, 1);
+      L.spike(4, 17, 22, 'up');
+      // crusher with warning telegraph before dropping
+      const crusher = L.block(9, 0, 4, 7);
+      L.on(() => L.px > 8, () => L.drop(crusher, 0.4, { land: true }));
+      // gentle saw from behind instead of a surprise head-on saw
+      const saw = L.saw(-2, 14.2, 0.75);
+      L.on(() => L.px > 15, () => { saw.vx = 5; });
       const sp = L.spike(29, 15, 1, 'up', { hidden: true });
       L.on(() => L.px > 27.5, () => sp.pop());
       L.door(30, 15);
@@ -390,27 +392,20 @@ const SINGLE = [
     name: 'Crusher Gauntlet',
     build(L) {
       L.spawn(2, 15);
-      L.text(3, 6, 'Four crushers. Zero mercy.');
+      L.text(3, 6, 'Watch the shadows. Time your dash.');
       L.block(0, 15, 32, 3);
-      // four drop-crushers with tight timing
-      const c1 = L.block(7, 0, 3, 7);
-      const c2 = L.block(13, 0, 3, 7);
-      const c3 = L.block(19, 0, 3, 7);
-      const c4 = L.block(25, 0, 3, 7);
-      L.on(() => L.px > 5.5, () => L.drop(c1, 0.08, { land: true }));
-      L.on(() => L.px > 11.5, () => L.drop(c2, 0.08, { land: true }));
-      L.on(() => L.px > 17.5, () => L.drop(c3, 0.08, { land: true }));
-      L.on(() => L.px > 23.5, () => L.drop(c4, 0.08, { land: true }));
-      // hidden spikes near landing zones
-      const s1 = L.spike(10, 15, 1, 'up', { hidden: true });
-      const s2 = L.spike(16, 15, 1, 'up', { hidden: true });
-      const s3 = L.spike(22, 15, 1, 'up', { hidden: true });
-      L.on(() => L.px > 9, () => s1.pop());
-      L.on(() => L.px > 15, () => s2.pop());
-      L.on(() => L.px > 21, () => s3.pop());
-      // saw starts following once second crusher drops
-      const saw = L.saw(-2, 14.2, 0.8);
-      L.on(() => c2.falling, () => { saw.vx = 8; });
+      // three crushers with distinct telegraph delays instead of near-instant drop
+      const c1 = L.block(8, 0, 3, 7);
+      const c2 = L.block(15, 0, 3, 7);
+      const c3 = L.block(22, 0, 3, 7);
+      L.on(() => L.px > 6.5, () => L.drop(c1, 0.45, { land: true }));
+      L.on(() => L.px > 13.5, () => L.drop(c2, 0.45, { land: true }));
+      L.on(() => L.px > 20.5, () => L.drop(c3, 0.45, { land: true }));
+      // a single visible hazard instead of unfair hidden pop spikes directly at landing spots
+      const s = L.spike(18.5, 15, 1, 'up');
+      // slow, steady saw from behind to keep pacing active without rushing
+      const saw = L.saw(-2, 14.2, 0.75);
+      L.on(() => L.px > 10, () => { saw.vx = 4.5; });
       L.door(29, 15);
     },
   },
