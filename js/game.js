@@ -887,14 +887,21 @@
     if (b.pending) { ox = (Math.random() - 0.5) * 3; oy = (Math.random() - 0.5) * 2; }
     const x = b.x * TILE + ox, y = b.y * TILE + oy, w = b.w * TILE, h = b.h * TILE;
     if (b.hidden) {
-      // the faintest shimmer, every few seconds
-      const ph = (L.t + b.sparkle) % 3.2;
-      if (ph < 0.35) {
-        ctx.globalAlpha = 0.5 * Math.sin((ph / 0.35) * Math.PI);
-        ctx.fillStyle = C.portal;
-        ctx.fillRect(x + w * ((b.sparkle * 7) % 1) - 2, y + h * 0.5 - 2, 4, 4);
-        ctx.globalAlpha = 1;
+      // a cluster of glowing star twinkles, staggered so a few are always shining
+      ctx.save(); ctx.fillStyle = C.portal; ctx.shadowColor = C.portal; ctx.shadowBlur = 10;
+      const n = Math.max(3, Math.round(b.w * 2));
+      for (let i = 0; i < n; i++) {
+        const ph = (L.t + b.sparkle + i * (1.6 / n) * 1.7) % 1.6;
+        if (ph >= 0.7) continue;
+        const k = Math.sin((ph / 0.7) * Math.PI), s = 2 + 5 * k;
+        const sx = x + w * ((b.sparkle * 7 + i * 0.618) % 1), sy = y + h * (0.2 + 0.6 * ((b.sparkle * 3 + i * 0.382) % 1));
+        ctx.globalAlpha = 0.9 * k;
+        ctx.beginPath();   // four-point star
+        ctx.moveTo(sx, sy - s); ctx.lineTo(sx + s * 0.25, sy - s * 0.25); ctx.lineTo(sx + s, sy); ctx.lineTo(sx + s * 0.25, sy + s * 0.25);
+        ctx.lineTo(sx, sy + s); ctx.lineTo(sx - s * 0.25, sy + s * 0.25); ctx.lineTo(sx - s, sy); ctx.lineTo(sx - s * 0.25, sy - s * 0.25);
+        ctx.fill();
       }
+      ctx.restore();
       return;
     }
     if (b.ghost) ctx.globalAlpha = 0.14;   // see-through: a secret room drawn behind it
