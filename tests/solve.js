@@ -150,8 +150,9 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
         return J(st, 'a', L.px > 8.6 && L.player.grounded) || J(st, 'b', L.px > 16.6 && L.player.grounded) ||
                J(st, 'c', L.px > 24.6 && L.player.grounded);
       },
-      // 20 The Reckoning: gravity, crumble, invert, crusher, lag, then climb 3-step hidden staircase
-      // Staircase: floor(y=15) → y=13.5 (x=22.5–25.5) → y=11.5 (x=25–28.5) → y=9.5 (x=28–32) → door(29.5,9.5)
+      // 20 The Reckoning: gravity, crumble, invert, crusher, lag, then single door moves up
+      // Door starts at (28,15), moves to (29.5,9.5) when approached.
+      // Staircase: floor(y=15) → y=13 (x=26–28.5) → y=11 (x=28.5–31) → y=9.5 (x=29–32) → door(29.5,9.5)
       (L, k, st) => {
         const p = L.player;
         if (L.invert) { k.left = 1; k.right = 0; } else { k.right = 1; k.left = 0; }
@@ -162,28 +163,28 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
           if (p.grounded && L.px > 10 && L.px < 18) st.s = 1;
           return false;
         }
-        // phase 1: past the crusher island (x=18–22). Walk right onto final platform.
+        // phase 1: past the crusher island (x=18–22). Walk right to trigger door move.
         if (!st.s2 && p.grounded && L.px > 22) st.s2 = 1;
         if (!st.s2) return false;
-        // phase 2: climb step 1 — jump from floor to y=13.5 platform (x=22.5–25.5)
+        // phase 2: walk right until door moves (triggered at ~x=26), then climb step 1
         if (!st.s3) {
-          if (J(st, 'c', L.px > 23.5 && p.grounded && p.y > 14)) return true;
-          if (p.grounded && p.y < 14) st.s3 = 1;
+          if (J(st, 'c', L.px > 26.5 && p.grounded && p.y > 14)) return true;
+          if (p.grounded && p.y < 13.5) st.s3 = 1;
           return false;
         }
-        // phase 3: on y=13.5 platform, jump to y=11.5 platform (x=25–28.5)
+        // phase 3: on y=13 platform, jump to y=11 platform (x=28.5–31)
         if (!st.s4) {
-          if (J(st, 'd', L.px > 24.5 && p.grounded && p.y < 14)) return true;
-          if (p.grounded && p.y < 12) st.s4 = 1;
+          if (J(st, 'd', L.px > 27.5 && p.grounded && p.y < 13.5)) return true;
+          if (p.grounded && p.y < 11.5) st.s4 = 1;
           return false;
         }
-        // phase 4: on y=11.5 platform, jump to solid block at y=9.5 (x=28–32) then walk into door
+        // phase 4: on y=11 platform, jump to solid block at y=9.5 (x=29–32) then walk into door
         if (!st.s5) {
-          if (J(st, 'e', L.px > 27 && p.grounded && p.y < 12)) return true;
+          if (J(st, 'e', L.px > 29 && p.grounded && p.y < 11.5)) return true;
           if (p.grounded && p.y < 10) st.s5 = 1;
           return false;
         }
-        // phase 5: on top block, walk right into door at x=29.5
+        // phase 5: on top block, walk right into door at x=29.5 (wait for tween to finish)
         k.right = 1; return false;
       },
     ];

@@ -467,17 +467,16 @@ const SINGLE = [
       const saw2 = L.saw(34, 14.2, 0.75);
       L.on(() => L.px > 8, () => { saw1.vx = 7; });
       L.on(() => L.px > 20, () => { saw2.vx = -7; });
-      // fake door, then the real one on a climbable hidden staircase
-      const fake = L.door(28, 15, { fake: true });
-      L.block(22.5, 13.5, 3, 1, { hidden: true });
-      L.block(25, 11.5, 3.5, 1, { hidden: true });
-      L.block(28, 9.5, 4, 1);
-      L.door(29.5, 9.5);
-      L.on(() => L.touch(fake), () => {
-        L.fakeWin();
-        L.wait(1.1, () => { L.banner = { text: 'JK', sub: 'check above you', t: 0, life: 2 }; });
+      // single door that runs away to an elevated platform
+      const portal = L.door(28, 15);
+      L.block(26, 13, 2.5, 1, { hidden: true });
+      L.block(28.5, 11, 2.5, 1, { hidden: true });
+      L.block(29, 9.5, 3, 1);
+      L.on(() => L.near(portal, 2.2), () => {
+        L.moveDoor(portal, 29.5, 9.5, 14);
+        L.say('not so fast');
       });
-      L.on(() => L.px > 25, () => { L.jumpDelay = 0; });
+      L.on(() => L.px > 26, () => { L.jumpDelay = 0; });
     },
   },
 ];
