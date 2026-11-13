@@ -467,10 +467,10 @@ const SINGLE = [
       L.on(() => L.px > 20, () => { saw2.vx = -7; });
       // fake door then real one on climbable hidden staircase
       const fake = L.door(28, 15, { fake: true });
-      L.block(21, 13, 2, 1, { hidden: true });
-      L.block(24, 10.5, 2, 1, { hidden: true });
-      L.block(27, 8, 4, 1);
-      L.door(28.5, 8);
+      L.block(23.5, 12.5, 2, 1, { hidden: true });
+      L.block(26, 10, 2, 1, { hidden: true });
+      L.block(28.5, 7.5, 3.5, 1);
+      L.door(29.5, 7.5);
       L.on(() => L.touch(fake), () => {
         L.fakeWin();
         L.wait(1.1, () => { L.banner = { text: 'JK', sub: 'check above you', t: 0, life: 2 }; });
