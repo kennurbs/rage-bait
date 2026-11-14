@@ -935,6 +935,7 @@ const SINGLE = [
     build(L) {
       L.spawn(2, 15);
       L.text(3, 2.6, 'Move on GREEN. Freeze on RED.');
+      const sign = L.texts[L.texts.length - 1];
       L.spike(0, 18, 32, 'up');
       // tier 1 (y 15), heading right
       L.block(0, 15, 6, 1);
@@ -962,7 +963,7 @@ const SINGLE = [
         L.wait(d, () => cycle(c === 'green' ? 'red' : 'green'));
       };
       cycle('red');
-      L.on(() => L.py < 7.6 && L.px < 27.2, () => { L.go = 'red'; since = L.t; });
+      L.on(() => L.py < 7.6 && L.px < 27.2, () => { L.go = 'red'; since = L.t; sign.str = 'Move on RED. Freeze on GREEN.'; });
       L.on(() => L.light !== L.go && L.t - since > 0.3 && Math.abs(L.player.vx) > 0.5, () => {
         L.say('I SAW THAT'); L.kill(L.player, 'red light');
       });
@@ -993,6 +994,7 @@ const SINGLE = [
       const lift2 = L.block(29.5, 6, 2.5, 0.5);
       L.block(28.5, -0.5, 3.5, 0.7, { solid: false });       // the ceiling over the last lift... isn't
       L.spike(28.5, 0.2, 3.5, 'down', { fake: true });
+      L.block(29.5, 0.8, 2.5, 1, { hidden: true, solid: false });   // shimmer hint: the way to the bonus room
       L.block(27, 2.5, 2.3, 1);                              // ledge C, with the fake portal
       const fakeDoor = L.door(27.2, 2.5, { fake: true });
       const ledgeTrap = L.spike(27, 2.5, 2.3, 'up', { hidden: true });
@@ -1122,6 +1124,7 @@ const SINGLE = [
       L.spike(17.2, 15, 0.8, 'up');
       L.block(20, 15, 6, 1);
       L.block(28.5, 15, 3.5, 3);
+      L.block(26, 15.5, 2.5, 1.5, { hidden: true, solid: false });  // shimmer hint: the pit is the way on
       // the obvious way on is a fake
       L.block(28.5, 12.5, 3.5, 0.5);
       const decoy = L.door(29.8, 12.5, { fake: true });
