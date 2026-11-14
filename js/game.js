@@ -78,6 +78,8 @@
     return s;
   })();
   function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } }
+  // admin panel settings: session only, never saved
+  const admin = { unlock: false, god: false, speed: 1, mode: 0, sel: 0, confirmReset: false, back: 'title' };
 
   // ---------------------------------------------------------------- audio
   let actx = null;
@@ -208,12 +210,12 @@
       this.mode = MODE[modeId];
       this.def = course(modeId)[idx];
       this.chained = !!this.mode.chained;
-      this.blocks = []; this.spikes = []; this.saws = []; this.pads = []; this.flags = [];
+      this.blocks = []; this.spikes = []; this.saws = []; this.lasers = []; this.pads = []; this.flags = []; this.ladders = [];
       this.doors = []; this.texts = []; this.bubbles = [];
       this.buttons = []; this.gates = []; this.jumpHooks = [];
       this.rope = ROPE; this.snagT = 0; this.view = { mirror: false, flip: false };
       this.triggers = []; this.timers = [];
-      this.g = 1; this.invert = false; this.swap = false; this.jumpDelay = 0; this.t = 0;
+      this.g = 1; this.invert = false; this.swap = false; this.jumpDelay = 0; this.speedMul = 1; this.t = 0;
       this.banner = null; this.won = false; this.over = false; this.shakeT = 0; this.shakeMag = 0;
       this.spawnPt = { x: 2, y: 15 }; this.spawnPt2 = null;
       this.players = [];
@@ -266,7 +268,7 @@
     spike(x, y, w, dir = 'up', o = {}) {
       const L = this;
       const s = {
-        kind: 'spike', x, y, w, dir, out: o.hidden ? 0 : 1, target: o.hidden ? 0 : 1,
+        kind: 'spike', x, y, w, dir, fake: !!o.fake, out: o.hidden ? 0 : 1, target: o.hidden ? 0 : 1,
         pop() { if (s.target !== 1) { s.target = 1; sfx.pop(); L.shake(0.08, 0.08); } },
         hide() { s.target = 0; }
       };
@@ -276,7 +278,13 @@
       const d = { kind: 'door', x, y: floorY - 1.6, w: 1.2, h: 1.6, fake: !!o.fake, tween: null, spin: 0 };
       this.doors.push(d); return d;
     }
-    saw(cx, cy, r) { const s = { kind: 'saw', x: cx, y: cy, r, vx: 0, vy: 0, rot: 0 }; this.saws.push(s); return s; }
+    saw(cx, cy, r, o = {}) { const s = { kind: 'saw', x: cx, y: cy, r, vx: 0, vy: 0, rot: 0, buried: !!o.buried }; this.saws.push(s); return s; }
+    // beam over the rect that is on for o.on seconds, then off for o.off; o.phase shifts the cycle
+    laser(x, y, w, h, o = {}) {
+      const l = { kind: 'laser', x, y, w, h, on: o.on || 1, off: o.off || 1, phase: o.phase || 0, live: false, warn: false };
+      this.lasers.push(l); return l;
+    }
+    ladder(x, y, w, h) { const l = { kind: 'ladder', x, y, w, h }; this.ladders.push(l); return l; }
     pad(x, y, w, g) { const p = { kind: 'pad', x, y, w, g }; this.pads.push(p); return p; }
     flag(x, floorY) { const f = { kind: 'flag', x, y: floorY - 2.2, w: 1, h: 2.2, evil: false }; this.flags.push(f); return f; }
     text(x, y, str) { this.texts.push({ x, y, str }); }
@@ -294,6 +302,7 @@
     say(str) { this.bubbles.push({ str, t: 0, p: this.cur }); }
     shake(t = 0.2, mag = 0.25) { this.shakeT = Math.max(this.shakeT, t); this.shakeMag = Math.max(this.shakeMag, mag); }
     fakeWin() { this.banner = { text: 'LEVEL COMPLETE', sub: 'well done!', t: 0 }; sfx.win(); }
+    get deaths() { return save.levelDeaths[dkey(this.mode.id, this.idx)] || 0; }
     get player() { return this.cur; }
     get other() { return this.players.find((p) => p !== this.cur); }
     all(fn) { const was = this.cur, ps = this.active(); let ok = ps.length > 0; for (const p of ps) { this.cur = p; if (!fn(p)) { ok = false; break; } } this.cur = was; return ok; }
@@ -391,7 +400,8 @@
           if (b.shakeT <= 0) { b.pending = false; b.falling = true; sfx.trap(); }
         }
         if (b.falling) {
-          b.vy = Math.min(b.vy + P.grav * 1.4 * dt, 40);
+          const f = b.fall || 1;   // block option: fall faster (broken platforms)
+          b.vy = Math.min(b.vy + P.grav * 1.4 * f * dt, 40 * f);
           b.y += b.vy * dt;
           if (b.land) {
             for (const o of this.blocks) {
@@ -426,6 +436,10 @@
 
       for (const s of this.spikes) s.out = approach(s.out, s.target, dt * 14);
       for (const s of this.saws) { s.x += s.vx * dt; s.y += s.vy * dt; s.rot += dt * 12; }
+      for (const l of this.lasers) {
+        const c = (this.t + l.phase) % (l.on + l.off);
+        l.live = c < l.on; l.warn = !l.live && c > l.on + l.off - 0.35;
+      }
       for (const d of this.doors) {
         d.spin += dt;
         if (d.tween) {
@@ -443,7 +457,7 @@
       if (this.invert) dir = -dir;
       let acc = p.grounded ? P.accG : P.accA;
       if (!dir && p.grounded) acc = P.fric;
-      p.vx = approach(p.vx, dir * P.speed, acc * dt);
+      p.vx = approach(p.vx, dir * P.speed * this.speedMul, acc * this.speedMul * dt);
       if (dir) p.face = dir;
 
       // jump input (optionally lagged)
@@ -466,6 +480,8 @@
       if (p.jumping && !p.cut && !c.jump && p.vy * g < 0) { p.vy *= 0.5; p.cut = true; }
 
       p.vy = clamp(p.vy + P.grav * g * dt, -P.maxFall, P.maxFall);
+      // ladders: hold jump to climb, otherwise slide down slowly
+      if (this.ladders.some((l) => overlap(p, l))) p.vy = c.jump ? -6 * g : Math.min(p.vy * g, 2) * g;
 
       // horizontal
       p.x += p.vx * dt;
@@ -547,7 +563,7 @@
       for (let i = 1; i < 10; i++) {
         const x = ax + ((bx - ax) * i) / 10, y = ay + ((by - ay) * i) / 10;
         const pt = { x: x - 0.05, y: y - 0.05, w: 0.1, h: 0.1 };
-        const hit = this.spikes.some((s) => s.out > 0.6 && overlap(pt, spikeBox(s))) || this.saws.some((s) => Math.hypot(s.x - x, s.y - y) < s.r);
+        const hit = this.spikes.some((s) => !s.fake && s.out > 0.6 && overlap(pt, spikeBox(s))) || this.saws.some((s) => Math.hypot(s.x - x, s.y - y) < s.r);
         if (!hit) continue;
         const [a, b] = this.players, dir = Math.sign(bx - ax) || 1;
         this.yank(a, dir * 7, -9 * this.g); this.yank(b, -dir * 7, -9 * this.g);
@@ -578,11 +594,12 @@
     }
 
     checkContacts(p) {
-      for (const s of this.spikes) if (s.out > 0.6 && overlap(p, spikeBox(s))) return this.kill(p, 'spikes');
+      for (const s of this.spikes) if (!s.fake && s.out > 0.6 && overlap(p, spikeBox(s))) return this.kill(p, 'spikes');
       for (const s of this.saws) {
         const cx = clamp(s.x, p.x, p.x + p.w), cy = clamp(s.y, p.y, p.y + p.h);
         if (Math.hypot(s.x - cx, s.y - cy) < s.r * 0.82) return this.kill(p, 'saw');
       }
+      for (const l of this.lasers) if (l.live && overlap(p, l)) return this.kill(p, 'laser');
       if (p.y > ROWS + 1 || p.y < -3) return this.kill(p, 'fell');
       for (const pd of this.pads) {
         if (this.g !== pd.g && overlap(p, padBox(pd))) {
@@ -606,6 +623,7 @@
 
     kill(p = this.active()[0], cause = 'restart') {
       if (this.over || !p) return;
+      if (admin.god && cause !== 'fell' && cause !== 'restart') return;
       this.over = true; this.victim = p; this.cause = cause;
       save.deaths++;
       const dk = dkey(this.mode.id, this.idx);
@@ -652,7 +670,7 @@
       const p = this.cur;
       burst(p.x + p.w / 2, p.y + p.h / 2, C.portal, 40, 10);
       const prog = save.progress;
-      if (this.idx + 2 > prog[this.mode.id]) { prog[this.mode.id] = Math.min(course(this.mode.id).length, this.idx + 2); persist(); }
+      if (!admin.unlock && this.idx + 2 > prog[this.mode.id]) { prog[this.mode.id] = Math.min(course(this.mode.id).length, this.idx + 2); persist(); }
       this.wait(this.mode.players > 1 ? 1.8 : 1.0, () => game.next());
     }
   }
@@ -662,7 +680,8 @@
     state: 'title', // title | mode | select | play | end
     mode: 'single', modeSel: 0,
     level: null, idx: 0, sel: 0, scrollY: 0, targetScrollY: 0, message: null, time: 0, strikes: 0, runDeaths: [0, 0],
-    unlocked() { return Math.min(save.progress[this.mode] || 1, course(this.mode).length); },
+    reached() { return Math.min(save.progress[this.mode] || 1, course(this.mode).length); },
+    unlocked() { return admin.unlock ? course(this.mode).length : this.reached(); },
     clearInput() { pressed[0].clear(); pressed[1].clear(); },
     setMode(id) { this.mode = id; syncCtl(); },
     start(idx, keepMessage = false) {
@@ -685,20 +704,53 @@
     next() { if (this.idx + 1 < course(this.mode).length) this.start(this.idx + 1); else { this.state = 'end'; sfx.win(); } },
   };
 
+  const SPEEDS = [1, 0.5, 0.25];
+  // act(d): d = 0 for ENTER/click, -1/+1 for left/right
+  const ADMIN_ITEMS = [
+    { label: () => `play any level:  < ${MODES[admin.mode].name} >`, act(d) {
+      if (d) { admin.mode = (admin.mode + d + MODES.length) % MODES.length; return; }
+      admin.unlock = true; game.setMode(MODES[admin.mode].id);
+      game.state = 'select'; game.sel = 0; updateSelectScroll(true);
+    } },
+    { label: () => `unlock all levels: ${admin.unlock ? 'ON  (N skips a level)' : 'off'}`, act() { admin.unlock = !admin.unlock; } },
+    { label: () => `god mode (traps can't kill): ${admin.god ? 'ON' : 'off'}`, act() { admin.god = !admin.god; } },
+    { label: () => `game speed: ${admin.speed}x`, act(d) { admin.speed = SPEEDS[(SPEEDS.indexOf(admin.speed) + (d < 0 ? SPEEDS.length - 1 : 1)) % SPEEDS.length]; } },
+    { label: () => (admin.confirmReset ? 'erase ALL progress + deaths? ENTER again' : 'reset save data'), act(d) {
+      if (d) return;
+      if (!admin.confirmReset) { admin.confirmReset = true; return; }
+      try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
+      location.reload();
+    } },
+  ];
+  const ADMIN_ROW = { top: 200, h: 46 };
+
   function onKey(code) {
     const go = code === 'Enter' || code === 'Space' || code === 'KeyZ';
     if (code === 'KeyM') { save.muted = !save.muted; persist(); return; }
+    if (code === 'Backquote' && (game.state === 'title' || game.state === 'mode')) {
+      sfx.click(); admin.back = game.state; game.state = 'admin'; return;
+    }
     if (game.state === 'title') {
       if (go) { sfx.click(); game.state = 'mode'; }
+    } else if (game.state === 'admin') {
+      const n = ADMIN_ITEMS.length, it = ADMIN_ITEMS[admin.sel];
+      const was = admin.sel;
+      if (code === 'ArrowDown' || code === 'KeyS') admin.sel = (admin.sel + 1) % n;
+      if (code === 'ArrowUp' || code === 'KeyW') admin.sel = (admin.sel + n - 1) % n;
+      if (admin.sel !== was) { admin.confirmReset = false; sfx.click(); }
+      if (code === 'ArrowLeft' || code === 'KeyA') { sfx.click(); it.act(-1); }
+      if (code === 'ArrowRight' || code === 'KeyD') { sfx.click(); it.act(1); }
+      if (go) { sfx.click(); it.act(0); }
+      if (code === 'Escape' || code === 'Backquote') { admin.confirmReset = false; game.state = admin.back; }
     } else if (game.state === 'mode') {
       if (code === 'ArrowRight' || code === 'KeyD' || code === 'ArrowDown' || code === 'KeyS') { game.modeSel = Math.min(MODES.length - 1, game.modeSel + 1); sfx.click(); }
       if (code === 'ArrowLeft' || code === 'KeyA' || code === 'ArrowUp' || code === 'KeyW') { game.modeSel = Math.max(0, game.modeSel - 1); sfx.click(); }
-      if (go) { sfx.click(); game.setMode(MODES[game.modeSel].id); game.start(game.unlocked() - 1); }
+      if (go) { sfx.click(); game.setMode(MODES[game.modeSel].id); game.start(game.reached() - 1); }
       if (code === 'KeyL') {
         sfx.click();
         game.setMode(MODES[game.modeSel].id);
         game.state = 'select';
-        game.sel = game.unlocked() - 1;
+        game.sel = game.reached() - 1;
         updateSelectScroll(true);
       }
       if (code === 'Escape') game.state = 'title';
@@ -717,6 +769,7 @@
       if (code === 'Escape') game.state = 'mode';
     } else if (game.state === 'play') {
       if (code === 'KeyR' && !game.level.won) game.level.kill();
+      if (code === 'KeyN' && admin.unlock && !game.level.won && !game.level.over) game.level.win();
       if (code === 'Escape') {
         game.state = 'select';
         game.sel = game.idx;
@@ -734,8 +787,12 @@
       audioOn();
       const r = cv.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * VW, y = ((e.clientY - r.top) / r.height) * VH;
-      if (game.state === 'title') onKey('Enter');
-      else if (game.state === 'mode') {
+      if (game.state === 'title') onKey(y > VH - 40 && x > VW - 120 ? 'Backquote' : 'Enter');
+      else if (game.state === 'admin') {
+        const i = Math.floor((y - ADMIN_ROW.top + ADMIN_ROW.h / 2) / ADMIN_ROW.h);
+        if (i >= 0 && i < ADMIN_ITEMS.length) { if (admin.sel !== i) admin.confirmReset = false; admin.sel = i; onKey('Enter'); }
+        else if (y < 90) onKey('Escape');
+      } else if (game.state === 'mode') {
         const i = modeHit(x, y);
         if (i >= 0) { game.modeSel = i; onKey('Enter'); }
         else if (y > VH - 70) onKey('KeyL');
@@ -840,6 +897,7 @@
       }
       return;
     }
+    if (b.ghost) ctx.globalAlpha = 0.14;   // see-through: a secret room drawn behind it
     ctx.fillStyle = C.blockEdge; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = C.block; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
     ctx.fillStyle = C.blockTop; ctx.fillRect(x + 2, y + 2, w - 4, 3);
@@ -847,7 +905,15 @@
       ctx.fillStyle = b.link;
       for (let k = 0; k * 12 < h - 8; k++) ctx.fillRect(x + w / 2 - 3, y + 6 + k * 12, 6, 6);
     }
+    ctx.globalAlpha = 1;
     if (b.flash > 0) { ctx.globalAlpha = b.flash / 0.4; ctx.fillStyle = C.portal; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+  }
+
+  function drawLadder(l) {
+    const x = l.x * TILE, y = l.y * TILE, w = l.w * TILE, h = l.h * TILE;
+    ctx.fillStyle = C.crate;
+    ctx.fillRect(x + 3, y, 4, h); ctx.fillRect(x + w - 7, y, 4, h);
+    for (let k = 6; k < h; k += 12) ctx.fillRect(x + 3, y + k, w - 6, 3);
   }
 
   function drawSpike(s) {
@@ -855,10 +921,12 @@
     const hgt = 0.62 * TILE * s.out;
     ctx.fillStyle = C.spike;
     ctx.beginPath();
-    for (let i = 0; i < s.w; i++) {
-      const x0 = (s.x + i) * TILE, y0 = s.y * TILE;
-      if (s.dir === 'up') { ctx.moveTo(x0 + 2, y0); ctx.lineTo(x0 + TILE / 2, y0 - hgt); ctx.lineTo(x0 + TILE - 2, y0); }
-      else { ctx.moveTo(x0 + 2, y0); ctx.lineTo(x0 + TILE / 2, y0 + hgt); ctx.lineTo(x0 + TILE - 2, y0); }
+    // spread whole triangles over the exact width, so fractional rows don't spill into their neighbours
+    const n = Math.max(1, Math.round(s.w)), tw = (s.w / n) * TILE;
+    for (let i = 0; i < n; i++) {
+      const x0 = s.x * TILE + i * tw, y0 = s.y * TILE;
+      if (s.dir === 'up') { ctx.moveTo(x0 + 2, y0); ctx.lineTo(x0 + tw / 2, y0 - hgt); ctx.lineTo(x0 + tw - 2, y0); }
+      else { ctx.moveTo(x0 + 2, y0); ctx.lineTo(x0 + tw / 2, y0 + hgt); ctx.lineTo(x0 + tw - 2, y0); }
     }
     ctx.fill();
   }
@@ -895,6 +963,26 @@
     ctx.restore();
   }
 
+  function drawLaser(l, t) {
+    const x = l.x * TILE, y = l.y * TILE, w = l.w * TILE, h = l.h * TILE, vert = l.h >= l.w;
+    ctx.save();
+    if (l.live) {
+      ctx.shadowColor = C.danger; ctx.shadowBlur = 16;
+      ctx.fillStyle = C.danger; ctx.fillRect(x, y, w, h);
+      ctx.shadowBlur = 0; ctx.fillStyle = '#ffd6dd';
+      if (vert) ctx.fillRect(x + w / 2 - 1.5, y, 3, h); else ctx.fillRect(x, y + h / 2 - 1.5, w, 3);
+    } else {
+      ctx.globalAlpha = l.warn ? 0.4 + 0.4 * Math.sin(t * 60) : 0.18;
+      ctx.fillStyle = C.danger;
+      if (vert) ctx.fillRect(x + w / 2 - 1, y, 2, h); else ctx.fillRect(x, y + h / 2 - 1, w, 2);
+    }
+    ctx.restore();
+    // emitters at both ends
+    ctx.fillStyle = C.blockEdge;
+    if (vert) { ctx.fillRect(x - 4, y, w + 8, 5); ctx.fillRect(x - 4, y + h - 5, w + 8, 5); }
+    else { ctx.fillRect(x, y - 4, 5, h + 8); ctx.fillRect(x + w - 5, y - 4, 5, h + 8); }
+  }
+
   function drawPad(pd, t) {
     const b = padBox(pd), x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
     ctx.save(); ctx.shadowColor = C.pad; ctx.shadowBlur = 12 + Math.sin(t * 5) * 5;
@@ -918,10 +1006,10 @@
   function drawPlayer(p, L) {
     if (p.dead || p.done) return;
     const cx = (p.x + p.w / 2) * TILE, base = L.g > 0 ? (p.y + p.h) * TILE : p.y * TILE;
-    const w = p.w * TILE * p.sx, h = p.h * TILE * p.sy;
+    const w = P.w * TILE * p.sx, h = P.h * TILE * p.sy, k = p.w / P.w;   // k < 1: shrunk player
     ctx.save();
     ctx.translate(cx, base);
-    if (L.g < 0) ctx.scale(1, -1);
+    ctx.scale(k, L.g < 0 ? -k : k);
     const skin = SKINS[p.idx || 0];
     ctx.fillStyle = skin.dark; roundRect(-w / 2, -h, w, h, 5); ctx.fill();
     ctx.fillStyle = skin.main; roundRect(-w / 2 + 1.5, -h + 1.5, w - 3, h - 5, 4); ctx.fill();
@@ -972,10 +1060,13 @@
     for (const f of L.flags) drawFlag(f, t);
     for (const d of L.doors) drawDoor(d, t);
     for (const s of L.spikes) drawSpike(s);
+    for (const l of L.ladders) drawLadder(l);
+    for (const s of L.saws) if (s.buried) drawSaw(s);   // drawn under blocks: only the exposed half shows
     for (const b of L.blocks) drawBlock(b, L);
     for (const pd of L.pads) drawPad(pd, t);
     for (const bt of L.buttons) drawButton(bt);
-    for (const s of L.saws) drawSaw(s);
+    for (const s of L.saws) if (!s.buried) drawSaw(s);
+    for (const l of L.lasers) drawLaser(l, t);
     if (L.chained) drawChain(L);
     for (const p of L.players) drawPlayer(p, L);
     for (const p of particles) {
@@ -983,6 +1074,13 @@
       ctx.fillRect(p.x * TILE, p.y * TILE, p.size * TILE, p.size * TILE);
     }
     ctx.globalAlpha = 1;
+    // darkness: everything outside a soft circle of light around the player is hidden
+    if (L.dark) {
+      const p = L.cur, cx = (p.x + p.w / 2) * TILE, cy = (p.y + p.h / 2) * TILE, r = L.dark * TILE;
+      const g = ctx.createRadialGradient(cx, cy, r * 0.55, cx, cy, r);
+      g.addColorStop(0, 'rgba(5,5,14,0)'); g.addColorStop(1, 'rgb(5,5,14)');
+      ctx.fillStyle = g; ctx.fillRect(-TILE, -TILE, VW + 2 * TILE, VH + 2 * TILE);
+    }
     for (const b of L.bubbles) drawBubble(b, L);
     ctx.restore();
 
@@ -1001,7 +1099,7 @@
       let k = Math.min(1, L.banner.t * 6);
       if (L.banner.life) k = Math.min(k, clamp((L.banner.life - L.banner.t) / 0.3, 0, 1));
       ctx.fillStyle = `rgba(13,12,29,${0.6 * k})`; ctx.fillRect(0, VH / 2 - 60, VW, 120);
-      text(L.banner.text, VW / 2, VH / 2 - 10, 54 * (0.6 + 0.4 * k), C.portal);
+      text(L.banner.text, VW / 2, VH / 2 - 10, 54 * (0.6 + 0.4 * k), L.banner.color || C.portal);
       if (L.banner.sub) text(L.banner.sub, VW / 2, VH / 2 + 34, 16, C.text, 'center', 'normal');
     }
     if (game.message) {
@@ -1009,6 +1107,8 @@
       ctx.globalAlpha = a; text(m.text, VW / 2, 80, 26, C.danger); ctx.globalAlpha = 1;
     }
     text(`${L.mode.hint} · R restart · ESC levels · M mute`, VW / 2, VH - 12, 12, 'rgba(20,20,43,0.55)', 'center', 'normal');
+    const tags = [admin.unlock && 'N skip', admin.god && 'GOD', admin.speed !== 1 && `${admin.speed}x`].filter(Boolean);
+    if (tags.length) text(`ADMIN: ${tags.join(' · ')}`, 14, VH - 12, 12, C.danger, 'left');
   }
 
   function drawTitle(t) {
@@ -1032,6 +1132,18 @@
     if (blink) text('press SPACE / tap to play', VW / 2, VH * 0.74, 22, C.portal);
     text(`deaths so far: ${save.deaths}`, VW / 2, VH * 0.82, 16, C.danger);
     text(save.muted ? 'sound off (M)' : 'sound on (M)', VW / 2, VH - 20, 12, C.dim, 'center', 'normal');
+    text('` admin', VW - 14, VH - 20, 12, C.dim, 'right', 'normal');
+  }
+
+  function drawAdmin() {
+    drawBg();
+    text('ADMIN PANEL', VW / 2, 90, 48, C.danger);
+    text('this session only · not saved', VW / 2, 132, 14, C.dim, 'center', 'normal');
+    ADMIN_ITEMS.forEach((it, i) => {
+      const on = i === admin.sel;
+      text(on ? `> ${it.label()} <` : it.label(), VW / 2, ADMIN_ROW.top + i * ADMIN_ROW.h, 20, on ? C.portal : C.text, 'center', on ? undefined : 'normal');
+    });
+    text('↑/↓ choose · ←/→ or ENTER change · ESC back', VW / 2, VH - 30, 14, C.dim, 'center', 'normal');
   }
 
   const SEL = { cols: 5, w: 120, h: 86, gapX: 24, gapY: 14, viewTop: 116, viewBottom: 426 };
@@ -1198,7 +1310,7 @@
     let dt = Math.min(0.05, (now - last) / 1000);
     last = now; game.time += dt;
     if (game.state === 'play') {
-      acc += dt;
+      acc += dt * admin.speed;
       while (acc >= STEP) { game.level.step(STEP); acc -= STEP; }
     }
     updateParticles(dt);
@@ -1208,6 +1320,7 @@
     if (game.state === 'title') drawTitle(game.time);
     else if (game.state === 'mode') drawMode(game.time);
     else if (game.state === 'select') drawSelect(game.time);
+    else if (game.state === 'admin') drawAdmin();
     else if (game.state === 'play') drawLevel(game.level);
     else drawEnd(game.time);
     requestAnimationFrame(frame);
@@ -1216,7 +1329,7 @@
 
   // deterministic hooks for automated tests (no effect on normal play)
   window.__ragebait = {
-    game, keys: ctl[0], pressed: pressed[0], ctl, pressedAll: pressed,
+    game, save, keys: ctl[0], pressed: pressed[0], ctl, pressedAll: pressed,
     load(i, mode = 'single') { game.setMode(mode); game.start(i); },
     step(n = 1) { for (let i = 0; i < n; i++) game.level.step(STEP); },
     STEP,

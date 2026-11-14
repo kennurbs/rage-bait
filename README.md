@@ -31,6 +31,8 @@ Each mode keeps its own level progress.
 | Jump    | Space, ↑, W, Z (hold to jump higher) | W, Space | ↑ |
 
 R restarts, Esc opens level select, M mutes. On the mode screen, L picks a level.
+
+` (backtick) on the title or mode screen opens the **admin panel**: play any level, unlock all, god mode, slow motion (1x / 0.5x / 0.25x), and reset save data. Its settings last for the session only; levels played with unlock-all on don't save progress, and N skips the current level.
 On touch devices, on-screen buttons appear for single player. Progress and death counts are saved in `localStorage`.
 
 ## Courses
