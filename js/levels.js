@@ -1142,6 +1142,166 @@ const SINGLE = [
       L.on(() => L.py > 16 && L.px > 26 && L.px < 28.5, () => undoingB(L));
     },
   },
+  // ---------------------------------------------------------------- level 31 (single-player, trap gauntlet)
+  {
+    // A single spike in the centre of the level, but approaching it triggers a sequence of traps:
+    // 1. A boulder drops from above — dodge it (stop/back up).
+    // 2. A saw rolls in from the left — jump over it.
+    // 3. Jump over the now-safe spike.
+    // 4. Near the portal a final saw sweeps in — jump it to win.
+    name: 'One Spike',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(5, 6, 'Just one spike. How hard can it be?');
+      L.block(0, 15, 32, 3);  // floor
+
+      // the single spike in the middle
+      L.spike(15, 15, 1, 'up');
+
+      // --- trap 1: boulder drops when you approach the spike ---
+      const boulder = L.block(14, -4, 3, 3);
+      L.on(() => L.px > 11, () => {
+        L.drop(boulder, 0.15, { land: true });
+        L.say('look out!');
+      });
+
+      // --- trap 2: saw rolls in from the left after the boulder lands ---
+      const saw1 = L.saw(-2, 14.2, 0.8);
+      L.on(() => !boulder.falling && boulder.y > 11, () => {
+        L.wait(0.4, () => {
+          saw1.vx = 9;
+          L.say('incoming!');
+        });
+      });
+
+      // --- trap 3: portal and final saw ---
+      L.door(28, 15);
+      const saw2 = L.saw(34, 14.2, 0.8);
+      L.on(() => L.px > 24, () => {
+        saw2.vx = -10;
+        L.say('one more!');
+      });
+    },
+  },
+  // ---------------------------------------------------------------- levels 32-40 (single-player, placeholders)
+  {
+    name: 'Double Trouble',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Two gaps. Two jumps. Easy.');
+      L.block(0, 15, 10, 3);
+      L.block(13, 15, 6, 3);
+      L.block(22, 15, 10, 3);
+      const s = L.spike(25, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 23.5, () => s.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Spiky Path',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Hop the spikes. Don\'t overthink it.');
+      L.block(0, 15, 32, 3);
+      L.spike(8, 15, 1, 'up');
+      L.spike(14, 15, 1, 'up');
+      L.spike(20, 15, 1, 'up');
+      const s = L.spike(26, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 24.5, () => s.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Crumble Road',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'The floor won\'t wait for you.');
+      L.block(0, 15, 5, 3);
+      for (let x = 5; x < 25; x++) L.block(x, 15, 1, 1, { crumble: 0.18 });
+      L.block(25, 15, 7, 3);
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Crusher Alley',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Watch the ceiling.');
+      L.block(0, 15, 32, 3);
+      const c1 = L.block(10, 0, 3, 7);
+      const c2 = L.block(20, 0, 3, 7);
+      L.on(() => L.px > 8.5, () => L.drop(c1, 0.4, { land: true }));
+      L.on(() => L.px > 18.5, () => L.drop(c2, 0.4, { land: true }));
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Saw Dodge',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Jump when you hear it.');
+      L.block(0, 15, 32, 3);
+      const saw = L.saw(-2, 14.2, 0.8);
+      L.on(() => L.px > 6, () => { saw.vx = 7; });
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Gap and Back',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'The portal moved. Go get it.');
+      L.block(0, 15, 12, 3);
+      L.block(15, 15, 17, 3);
+      const d = L.door(28, 15);
+      L.on(() => L.near(d, 3), () => {
+        L.moveDoor(d, 3, 15, 40);
+        L.say('come back!');
+      });
+    },
+  },
+  {
+    name: 'Hidden Floor',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Not all floors are visible.');
+      L.block(0, 15, 8, 3);
+      L.block(11, 15, 4, 3, { hidden: true });
+      L.block(18, 15, 4, 3, { hidden: true });
+      L.block(25, 15, 7, 3);
+      L.spike(0, 18, 32, 'up');
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'Pop Quiz',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'Spikes pop when you least expect it.');
+      L.block(0, 15, 32, 3);
+      const s1 = L.spike(8, 15, 2, 'up', { hidden: true });
+      const s2 = L.spike(15, 15, 2, 'up', { hidden: true });
+      const s3 = L.spike(22, 15, 2, 'up', { hidden: true });
+      L.on(() => L.px > 6.5, () => s1.pop());
+      L.on(() => L.px > 13.5, () => s2.pop());
+      L.on(() => L.px > 20.5, () => s3.pop());
+      L.door(29, 15);
+    },
+  },
+  {
+    name: 'The Long Jump',
+    build(L) {
+      L.spawn(2, 15);
+      L.text(3, 6, 'One big gap. Commit.');
+      L.block(0, 15, 10, 3);
+      L.block(14, 17, 8, 1);
+      L.spike(14, 17, 8, 'up');
+      L.block(22, 15, 10, 3);
+      const s = L.spike(24, 15, 1, 'up', { hidden: true });
+      L.on(() => L.px > 22.5, () => s.pop());
+      L.door(29, 15);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------- multiplayer course

@@ -374,6 +374,46 @@ const [onlyCourse, onlyLevel] = process.argv.slice(2);
       ]),
       // 30 The Undoing: one hop list per room
       (L, k, st) => { const r = L.room; st[r] = st[r] || {}; return undoing[r](L, k, st[r]); },
+      // 31 One Spike: back up from boulder, jump saw, jump spike, jump final saw
+      (L, k, st) => {
+        const p = L.player;
+        // phase 0: walk right until boulder triggers (~x=11), then back up
+        if (!st.ph) {
+          k.right = 1;
+          if (L.blocks[1].pending || L.blocks[1].falling) { st.ph = 1; k.right = 0; k.left = 1; }
+          return false;
+        }
+        // phase 1: retreat left while boulder falls, wait for it to land
+        if (st.ph === 1) {
+          k.left = 1;
+          if (!L.blocks[1].falling && L.blocks[1].y > 11 && p.grounded) { st.ph = 2; }
+          return false;
+        }
+        // phase 2: wait a beat for saw to start, then jump over the saw when it arrives
+        if (st.ph === 2) {
+          if (L.saws[0].vx > 0 && L.saws[0].x > L.px - 3.5 && L.saws[0].x < L.px + 0.5 && p.grounded) {
+            st.ph = 3; return true;
+          }
+          return false;
+        }
+        // phase 3: run right, jump over the spike
+        if (st.ph === 3) {
+          k.right = 1;
+          if (p.grounded && L.px > 13.5 && L.px < 16) { st.ph = 4; return true; }
+          return false;
+        }
+        // phase 4: run right, jump over the final saw near the portal
+        if (st.ph === 4) {
+          k.right = 1;
+          if (L.saws[1].vx < 0 && L.saws[1].x < L.px + 3.5 && L.saws[1].x > L.px - 0.5 && p.grounded) {
+            st.ph = 5; return true;
+          }
+          return false;
+        }
+        // phase 5: walk into the portal
+        if (st.ph === 5) { k.right = 1; return false; }
+        return false;
+      },
     ];
 
     // ---- two-player policies: (L, A, B, st). A = player 1, B = player 2.
